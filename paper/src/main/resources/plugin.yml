@@ -11,4 +11,3 @@ commands:
     aliases: [l]
   register:
     aliases: [reg]
-  captcha:

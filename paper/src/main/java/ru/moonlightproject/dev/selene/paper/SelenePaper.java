@@ -56,7 +56,7 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
    try{Class.forName("io.papermc.paper.dialog.Dialog");dialogCapable=true;}catch(ClassNotFoundException ignored){}
    getServer().getPluginManager().registerEvents(this,this);
    if(!standalone){getServer().getMessenger().registerIncomingPluginChannel(this,SESSION_CHANNEL,this);getServer().getMessenger().registerOutgoingPluginChannel(this,SESSION_CHANNEL);}
-   for(String command:List.of("login","register","captcha")){getCommand(command).setExecutor(this);getCommand(command).setTabCompleter((s,c,a,args)->List.of());}
+   for(String command:List.of("login","register")){getCommand(command).setExecutor(this);getCommand(command).setTabCompleter((s,c,a,args)->List.of());}
    // Reload is unsupported: no existing connection may inherit authentication.
    for(Player p:Bukkit.getOnlinePlayers())p.kick(net.kyori.adventure.text.Component.text(msg("unavailable")));
   }catch(Exception | LinkageError e){String reason=e.getMessage()==null?e.getClass().getSimpleName():e.getMessage();getLogger().log(Level.SEVERE,"Selene could not initialize securely: "+reason+". Stopping server.",e);Bukkit.shutdown();}
@@ -126,7 +126,7 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
      case "CAPTCHA" -> {try{showMap(s,reply.image());s.player.sendMessage(msg("CAPTCHA"));}catch(Exception ex){s.player.kick(net.kyori.adventure.text.Component.text(msg("unavailable")));}}
      case "LOGIN","REGISTER" -> {String text=msg(reply.status());s.player.sendMessage(text);if(dialogCapable&&getConfig().getBoolean("dialogs"))try{AuthNotice.show(s.player,msg("dialog-title"),text,msg("dialog-close"));}catch(LinkageError ignored){}}
      case "CAPTCHA_INVALID","INVALID_CREDENTIALS","ACCOUNT_EXISTS","RATE_LIMITED","BUSY" -> s.player.sendMessage(msg(reply.status()));
-     default -> s.player.kick(net.kyori.adventure.text.Component.text(msg("unavailable")));
+     default -> {String key=AuthInputValidation.messageKeyForStatus(reply.status());if(key==null)s.player.kick(net.kyori.adventure.text.Component.text(msg("unavailable")));else s.player.sendMessage(msg(key));}
     }
    });
   });
@@ -151,15 +151,17 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
  @Override public boolean onCommand(CommandSender sender,Command cmd,String label,String[] args){
   if(!(sender instanceof Player p))return true;Session s=sessions.get(p.getUniqueId());if(s==null||s.authenticated)return true;
   String name=cmd.getName();
-  if((name.equals("register")&&args.length!=2)||(!name.equals("register")&&args.length!=1)||Arrays.stream(args).anyMatch(a->a.length()>256)){p.sendMessage(msg("usage"));return true;}
-  if(name.equals("register")&&!args[0].equals(args[1])){p.sendMessage(msg("mismatch"));return true;}
-  if(name.equals("captcha")&&!args[0].matches("[0-9]{1,12}")){p.sendMessage(msg("usage"));return true;}
-  request(s,name.equals("captcha")?"answer":name,name.equals("captcha")?"":args[0],name.equals("captcha")?args[0]:"");return true;
+  if((name.equals("register")&&args.length!=2)||(!name.equals("register")&&args.length!=1)){p.sendMessage(msg("usage"));return true;}
+  AuthInputValidation.ValidationResult validation=name.equals("register")
+   ?AuthInputValidation.registration(args[0],args[1],8,256)
+   :AuthInputValidation.password(args[0],8,256);
+  if(!validation.valid()){p.sendMessage(msg(validation.messageKey()));return true;}
+  request(s,name,args[0],"");return true;
  }
  @EventHandler public void quit(PlayerQuitEvent e){Session s=sessions.get(e.getPlayer().getUniqueId());if(s!=null&&s.player==e.getPlayer()&&sessions.remove(e.getPlayer().getUniqueId(),s)){if(packetEventsEnabled)inventoryProtection.close(s.inventoryConnection);restorePresentation(s);releaseMap(s);gateway.call(dto(s,"close","",""));}}
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void move(PlayerMoveEvent e){if(locked(e.getPlayer())&&e.hasChangedPosition())e.setTo(e.getFrom());}
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void teleport(PlayerTeleportEvent e){if(locked(e.getPlayer())&&e.getCause()!=PlayerTeleportEvent.TeleportCause.PLUGIN)e.setCancelled(true);}
- @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void command(PlayerCommandPreprocessEvent e){if(locked(e.getPlayer())){String c=e.getMessage().split(" ",2)[0].toLowerCase(Locale.ROOT);if(!Set.of("/selene:login","/selene:register","/selene:captcha").contains(c)){e.setCancelled(true);e.getPlayer().sendMessage(msg("blocked"));}}}
+ @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void command(PlayerCommandPreprocessEvent e){if(locked(e.getPlayer())){String c=e.getMessage().split(" ",2)[0].substring(1);if(!PacketPolicy.allowCommand(c)){e.setCancelled(true);e.getPlayer().sendMessage(msg("blocked"));}}}
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void chat(AsyncPlayerChatEvent e){if(locked(e.getPlayer()))e.setCancelled(true);}
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void interact(PlayerInteractEvent e){if(locked(e.getPlayer()))e.setCancelled(true);}
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void interactEntity(PlayerInteractEntityEvent e){if(locked(e.getPlayer()))e.setCancelled(true);}
