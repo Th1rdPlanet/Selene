@@ -1,26 +1,56 @@
-# PROXY_AUTH uses only relay.properties. STANDALONE uses only standalone.properties.
+# Selene / Paper
+# Этот файл содержит только поведение данного Paper-сервера.
+# Настройки backend, режимов атаки и маршрутизации находятся на Velocity.
+
+# PROXY_AUTH — выделенный auth-сервер за Velocity. Используется relay.properties;
+# к Rust backend обращается только Velocity.
+# STANDALONE — одиночный Paper без proxy. Используется standalone.properties.
 role: PROXY_AUTH
-# AUTO enables PacketEvents only for STANDALONE. ENABLED and DISABLED override it.
+
+# AUTO: включить PacketEvents только в STANDALONE, где нужно скрывать реальный
+# инвентарь игрока. На выделенном PROXY_AUTH инвентарь и так пустой.
+# ENABLED/DISABLED: принудительно включить/выключить интеграцию.
 packet-events-mode: AUTO
+
+# Сейчас безопасно реализован AFTER_JOIN: игрок уже подключён к Paper, но полностью
+# заблокирован до входа. BEFORE_JOIN требует fork handshake API и настраивается на proxy.
 stage: AFTER_JOIN
+
+# Сейчас поддерживается MAP: backend генерирует цифровую CAPTCHA, Paper показывает карту.
 captcha-view: MAP
-# Native notice dialogs on 1.21.8+ clients; older clients receive chat instructions.
+
+# На клиентах 1.21.8+ дополнительно показывать нативные информационные диалоги.
+# Команды и CAPTCHA остаются доступны в чате; весь текст задаётся ниже.
 dialogs: true
+
+# Отключить игрока, если он не завершил CAPTCHA/вход за указанное время.
 timeout-seconds: 120
+
+# Временные эффекты действуют только пока игрок заблокирован.
 effects:
   blindness: false
   darkness: false
+
+# Видимость до успешной аутентификации.
 visibility:
   hide-player-from-others: true
   hide-others-from-player: false
+
+# Необязательная точка ожидания для STANDALONE или собственного auth-мира.
+# При enabled=false игрок остаётся в точке, куда его поместил сервер.
 auth-location:
   enabled: false
   world: world
   x: 0.5
   y: 100.0
   z: 0.5
-# External pack managers own their pack distribution; Selene never embeds a pack.
+
+# Selene не раздаёт resource pack сам. Допустимые значения:
+# NONE, Oraxen, ItemsAdder. Выбранный плагин должен быть установлен на этом Paper.
 resource-pack-provider: NONE
+
+# Все сообщения Paper и весь текст диалогов настраиваются здесь.
+# Плейсхолдеров в текущей версии нет.
 messages:
   unavailable: 'Authentication unavailable. Please reconnect later.'
   timeout: 'Authentication timed out.'

@@ -1,18 +1,34 @@
+# Selene / Rust backend
+# В proxy-схеме к этому адресу подключается только Velocity.
 listen = "127.0.0.1:38191"
-# Credentials stay in the environment, never in protocol replies or logs.
+# ИМЯ переменной окружения с URL базы, а не сам URL.
+# Примеры значения переменной:
+# sqlite://backend/selene.db?mode=rwc
+# mysql://user:password@127.0.0.1/selene
+# postgres://user:password@127.0.0.1/selene
 database_url_env = "SELENE_DATABASE_URL"
+
+# PEM-файлы backend: серверный сертификат, его приватный ключ и CA,
+# которым подписаны клиентские сертификаты Velocity/Paper.
 certificate = "backend/tls/server.pem"
 private_key = "backend/tls/server-key.pem"
 client_ca = "backend/tls/frontend-ca.pem"
+# true допустимо только для локального loopback smoke-test без TLS.
 development_plaintext = false
 
 [policy]
+# Максимум активных сессий и время жизни незавершённого входа.
 session_capacity = 10000
 pending_seconds = 180
+# Сколько может жить завершённая сессия и выданная CAPTCHA.
 authenticated_seconds = 86400
 captcha_seconds = 120
+# Общий предел неверных CAPTCHA/паролей в одной сессии.
 max_attempts = 3
+# IP попадёт в зелёный список после этого времени игры; запись живёт trust_ttl_seconds.
 trust_qualify_seconds = 600
 trust_ttl_seconds = 604800
+# Число параллельных Argon2 workers. Увеличивай только после замера CPU/RAM.
 password_workers = 2
+# Ограниченная память закрытых/просроченных session id для защиты от replay.
 tombstone_capacity = 20000
