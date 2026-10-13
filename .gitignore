@@ -3,6 +3,7 @@
 target/
 .deps/
 .superpowers/
+docs/superpowers/
 run/
 *.db
 *.db-shm

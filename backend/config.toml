@@ -1,0 +1,17 @@
+listen = "127.0.0.1:25580"
+# Credentials stay in the environment, never in protocol replies or logs.
+database_url_env = "SELENE_DATABASE_URL"
+certificate = "backend/tls/server.pem"
+private_key = "backend/tls/server-key.pem"
+client_ca = "backend/tls/frontend-ca.pem"
+development_plaintext = false
+
+[policy]
+session_capacity = 10000
+pending_seconds = 180
+authenticated_seconds = 86400
+captcha_seconds = 120
+max_attempts = 3
+trust_qualify_seconds = 600
+trust_ttl_seconds = 604800
+password_workers = 2

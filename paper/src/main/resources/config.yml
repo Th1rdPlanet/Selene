@@ -1,0 +1,38 @@
+# PROXY_AUTH uses only relay.properties. STANDALONE uses only standalone.properties.
+role: PROXY_AUTH
+stage: AFTER_JOIN
+captcha-view: MAP
+# Native notice dialogs on 1.21.8+ clients; older clients receive chat instructions.
+dialogs: true
+timeout-seconds: 120
+effects:
+  blindness: false
+  darkness: false
+visibility:
+  hide-player-from-others: true
+  hide-others-from-player: false
+auth-location:
+  enabled: false
+  world: world
+  x: 0.5
+  y: 100.0
+  z: 0.5
+# External pack managers own their pack distribution; Selene never embeds a pack.
+resource-pack-provider: NONE
+messages:
+  unavailable: 'Authentication unavailable. Please reconnect later.'
+  timeout: 'Authentication timed out.'
+  blocked: 'Complete authentication first.'
+  usage: 'Use /captcha <digits>, /login <password> or /register <password> <password>.'
+  CAPTCHA: 'Read the map and enter /captcha <digits>.'
+  CAPTCHA_INVALID: 'Incorrect captcha. Read the map and try again.'
+  LOGIN: 'Enter /login <password>.'
+  REGISTER: 'Enter /register <password> <password>.'
+  AUTHENTICATED: 'Authentication complete.'
+  INVALID_CREDENTIALS: 'Incorrect credentials.'
+  ACCOUNT_EXISTS: 'Account already exists. Use /login <password>.'
+  RATE_LIMITED: 'Too many attempts. Please wait.'
+  BUSY: 'Authentication is busy. Please wait.'
+  mismatch: 'Passwords do not match.'
+  dialog-title: 'Selene authentication'
+  dialog-close: 'Continue'

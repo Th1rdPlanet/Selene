@@ -1,0 +1,17 @@
+# Local integration smoke only. The backend rejects plaintext on non-loopback addresses.
+listen = "127.0.0.1:25581"
+database_url_env = "SELENE_DATABASE_URL"
+certificate = "unused-in-development.pem"
+private_key = "unused-in-development.key"
+client_ca = "unused-in-development-ca.pem"
+development_plaintext = true
+
+[policy]
+session_capacity = 100
+pending_seconds = 30
+authenticated_seconds = 120
+captcha_seconds = 30
+max_attempts = 3
+trust_qualify_seconds = 10
+trust_ttl_seconds = 60
+password_workers = 2

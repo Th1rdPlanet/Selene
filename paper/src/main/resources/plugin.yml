@@ -1,0 +1,14 @@
+name: Selene
+version: 0.1.0-dev
+main: ru.moonlightproject.dev.selene.paper.SelenePaper
+api-version: '1.21'
+author: '~VicTim~'
+website: https://dev.moonlightproject.ru
+softdepend: [packetevents, Oraxen, ItemsAdder]
+load: STARTUP
+commands:
+  login:
+    aliases: [l]
+  register:
+    aliases: [reg]
+  captcha:
