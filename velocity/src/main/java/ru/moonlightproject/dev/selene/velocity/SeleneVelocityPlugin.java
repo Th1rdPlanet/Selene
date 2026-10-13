@@ -9,6 +9,7 @@ import com.velocitypowered.api.event.connection.PreLoginEvent;
 import com.velocitypowered.api.event.player.PlayerChooseInitialServerEvent;
 import com.velocitypowered.api.event.connection.PluginMessageEvent;
 import com.velocitypowered.api.event.player.ServerConnectedEvent;
+import com.velocitypowered.api.event.player.ServerPostConnectEvent;
 import com.velocitypowered.api.event.player.ServerPreConnectEvent;
 import com.velocitypowered.api.event.proxy.ProxyInitializeEvent;
 import com.velocitypowered.api.event.proxy.ProxyShutdownEvent;
@@ -225,16 +226,22 @@ public final class SeleneVelocityPlugin {
         RuntimeState state = runtime;
         if (state == null) return;
         String server = event.getServer().getServerInfo().getName();
-        if (server.equals(state.config().authServer()) && !isAuthenticated(event.getPlayer())) {
-            state.identities().get(event.getPlayer())
-                .flatMap(state.sessions()::get)
-                .ifPresent(session -> deliverSessionToken(event.getPlayer(), session, 0));
-            return;
-        }
+        if (server.equals(state.config().authServer()) && !isAuthenticated(event.getPlayer())) return;
         if (!isAuthenticated(event.getPlayer())) return;
         if (!server.equals(state.config().authServer()) && lastServers.size() < state.config().sessionCapacity()) {
             lastServers.put(event.getPlayer().getUsername().toLowerCase(Locale.ROOT), server);
         }
+    }
+
+    @Subscribe
+    public void postConnected(ServerPostConnectEvent event) {
+        RuntimeState state = runtime;
+        if (state == null || isAuthenticated(event.getPlayer())) return;
+        event.getPlayer().getCurrentServer()
+            .filter(connection -> connection.getServerInfo().getName().equals(state.config().authServer()))
+            .ifPresent(connection -> state.identities().get(event.getPlayer())
+                .flatMap(state.sessions()::get)
+                .ifPresent(session -> deliverSessionToken(event.getPlayer(), connection, session, 0)));
     }
 
     @Subscribe
@@ -325,21 +332,42 @@ public final class SeleneVelocityPlugin {
         }
     }
 
-    private void deliverSessionToken(Player player, ConnectionSessions.Session session, int attempt) {
+    private void deliverSessionToken(
+        Player player,
+        ServerConnection connection,
+        ConnectionSessions.Session session,
+        int attempt
+    ) {
         RuntimeState state = runtime;
-        if (state == null || acknowledgedSessionTokens.contains(session.id())) return;
+        if (state == null) return;
         boolean current = state.identities().get(player)
-            .filter(connection -> state.sessions().isCurrent(connection, session.id()))
+            .filter(connectionId -> state.sessions().isCurrent(connectionId, session.id()))
             .isPresent();
-        Optional<ServerConnection> connection = player.getCurrentServer()
-            .filter(server -> server.getServerInfo().getName().equals(state.config().authServer()));
-        if (!current || connection.isEmpty()) return;
-        if (attempt >= 4) {
+        SessionTokenDelivery.Outcome outcome = SessionTokenDelivery.attempt(
+            state.config().authServer(),
+            current,
+            acknowledgedSessionTokens.contains(session.id()),
+            attempt,
+            4,
+            new SessionTokenDelivery.Channel() {
+                @Override
+                public String serverName() {
+                    return connection.getServerInfo().getName();
+                }
+
+                @Override
+                public boolean send(byte[] payload) {
+                    return connection.sendPluginMessage(SESSION_CHANNEL, payload);
+                }
+            },
+            tokenBytes(session.id())
+        );
+        if (outcome == SessionTokenDelivery.Outcome.IGNORED) return;
+        if (outcome == SessionTokenDelivery.Outcome.EXHAUSTED) {
             player.disconnect(text("session-channel-unavailable"));
             return;
         }
-        connection.get().sendPluginMessage(SESSION_CHANNEL, tokenBytes(session.id()));
-        proxy.getScheduler().buildTask(this, () -> deliverSessionToken(player, session, attempt + 1))
+        proxy.getScheduler().buildTask(this, () -> deliverSessionToken(player, connection, session, attempt + 1))
             .delay(250, TimeUnit.MILLISECONDS).schedule();
     }
 
