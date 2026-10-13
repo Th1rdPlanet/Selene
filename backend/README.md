@@ -1,11 +1,14 @@
 # Selene backend
 
-Run root `scripts/bootstrap-framework.sh` first to obtain the pinned MoonLightBridge source, then:
+From the repository root, obtain the pinned MoonLightBridge source once and start the backend through the checked launcher:
 
 ```sh
+./scripts/bootstrap-framework.sh
 export SELENE_DATABASE_URL='sqlite://backend/selene.db?mode=rwc'
-cargo run --manifest-path backend/Cargo.toml --release -- backend/config.toml
+./scripts/run-backend.sh
 ```
+
+The launcher validates Cargo, the framework checkout, config, database environment variable and required TLS files before compiling. Pass another config path as its first argument when needed. The backend binds to `127.0.0.1:38191` by default, matching Velocity's default `backend-endpoint`.
 
 The URL also accepts `postgres://...` and `mysql://...`. Schema creation is automatic; SQL parameters are bound and account names canonicalized. Protect the database and environment credentials. SQLite is covered by automated tests; MySQL and PostgreSQL drivers compile but require integration testing against real servers before deployment.
 

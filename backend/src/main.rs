@@ -1,3 +1,4 @@
+use anyhow::Context;
 use moonlight_bridge_server::{Router, Server, ServerLimits};
 use selene_backend::{
     Reply, Request,
@@ -23,15 +24,37 @@ async fn main() -> anyhow::Result<()> {
     let path = std::env::args()
         .nth(1)
         .unwrap_or_else(|| "backend/config.toml".into());
-    let config: Config = toml::from_str(&std::fs::read_to_string(path)?)?;
-    let address: SocketAddr = config.listen.parse()?;
+    let source = std::fs::read_to_string(&path)
+        .with_context(|| format!("cannot read backend config {path}"))?;
+    let config: Config = toml::from_str(&source)
+        .with_context(|| format!("invalid TOML in backend config {path}"))?;
+    let address: SocketAddr = config.listen.parse().with_context(|| {
+        format!(
+            "invalid listen address '{}' (expected numeric IP:port)",
+            config.listen
+        )
+    })?;
     anyhow::ensure!(
         !config.development_plaintext || address.ip().is_loopback(),
-        "development plaintext must bind loopback"
+        "development_plaintext=true is allowed only on a loopback listen address"
     );
-    let url = std::env::var(&config.database_url_env)
-        .map_err(|_| anyhow::anyhow!("database URL environment variable is missing"))?;
-    let service = Arc::new(Service::new(&url, config.policy).await?);
+    let url = std::env::var(&config.database_url_env).with_context(|| {
+        format!(
+            "database URL environment variable {} is missing",
+            config.database_url_env
+        )
+    })?;
+    anyhow::ensure!(
+        !url.is_empty(),
+        "database URL environment variable {} is empty",
+        config.database_url_env
+    );
+    let service = Arc::new(Service::new(&url, config.policy).await.with_context(|| {
+        format!(
+            "cannot initialize database configured by {} (value hidden)",
+            config.database_url_env
+        )
+    })?);
     let requests = Arc::new(tokio::sync::Semaphore::new(32));
     let router = Router::builder()
         .route(1397046273, move |body| {
@@ -59,14 +82,29 @@ async fn main() -> anyhow::Result<()> {
         .build();
     let server = if config.development_plaintext {
         eprintln!("Selene development plaintext enabled on loopback");
-        Server::bind_tcp(&config.listen, router).await?
+        Server::bind_tcp(&config.listen, router)
+            .await
+            .with_context(|| {
+                format!(
+                    "cannot bind development backend listener on {}",
+                    config.listen
+                )
+            })?
     } else {
         let tls = moonlight_bridge_server::tls::load_mtls_server_config(
-            config.certificate,
-            config.private_key,
-            config.client_ca,
-        )?;
-        Server::bind_tls(&config.listen, router, tls).await?
+            &config.certificate,
+            &config.private_key,
+            &config.client_ca,
+        )
+        .with_context(|| {
+            format!(
+                "cannot load mTLS files: certificate={}, private_key={}, client_ca={}",
+                config.certificate, config.private_key, config.client_ca
+            )
+        })?;
+        Server::bind_tls(&config.listen, router, tls)
+            .await
+            .with_context(|| format!("cannot bind TLS backend listener on {}", config.listen))?
     };
     server
         .with_hello_timeout(Duration::from_secs(5))
@@ -77,6 +115,7 @@ async fn main() -> anyhow::Result<()> {
             ..ServerLimits::default()
         })
         .run()
-        .await?;
+        .await
+        .context("MoonLightBridge backend listener stopped with an error")?;
     Ok(())
 }

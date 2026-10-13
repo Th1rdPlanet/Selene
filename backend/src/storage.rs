@@ -1,3 +1,4 @@
+use anyhow::Context;
 use sqlx::{AnyPool, Row, any::AnyPoolOptions};
 use std::collections::BTreeMap;
 pub struct Storage {
@@ -15,8 +16,9 @@ impl Storage {
             .max_connections(if url.contains(":memory:") { 1 } else { 8 })
             .acquire_timeout(std::time::Duration::from_secs(5))
             .connect(url)
-            .await?;
-        sqlx::query("CREATE TABLE IF NOT EXISTS selene_accounts (name VARCHAR(16) PRIMARY KEY, password_hash VARCHAR(255) NOT NULL, premium INTEGER NOT NULL, trusted_ip VARCHAR(45) NOT NULL, trusted_until BIGINT NOT NULL)").execute(&pool).await?;
+            .await
+            .context("database connection failed")?;
+        sqlx::query("CREATE TABLE IF NOT EXISTS selene_accounts (name VARCHAR(16) PRIMARY KEY, password_hash VARCHAR(255) NOT NULL, premium INTEGER NOT NULL, trusted_ip VARCHAR(45) NOT NULL, trusted_until BIGINT NOT NULL)").execute(&pool).await.context("cannot create or validate selene_accounts schema")?;
         Ok(Self {
             pool,
             postgres: url.starts_with("postgres"),
