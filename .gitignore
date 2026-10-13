@@ -1,0 +1,13 @@
+.gradle/
+**/build/
+target/
+.deps/
+.superpowers/
+run/
+*.db
+*.db-shm
+*.db-wal
+*.p12
+*.key
+.env
+.idea/
