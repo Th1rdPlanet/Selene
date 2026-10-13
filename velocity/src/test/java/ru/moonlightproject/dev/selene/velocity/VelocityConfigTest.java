@@ -28,6 +28,8 @@ class VelocityConfigTest {
         assertEquals("Access denied", config.message("denied"));
         assertEquals(4096, config.sessionCapacity());
         assertFalse(config.forkEnabled());
+        assertTrue(config.premiumLookupEnabled());
+        assertEquals(8, config.premiumLookupConcurrency());
     }
 
     private static String valid() {
@@ -55,6 +57,11 @@ class VelocityConfigTest {
             normal-captcha=false
             fork-enabled=false
             medium-before-login=false
+            premium-lookup-enabled=true
+            premium-lookup-timeout-millis=2000
+            premium-lookup-cache-capacity=10000
+            premium-lookup-cache-seconds=3600
+            premium-lookup-concurrency=8
             session-capacity=4096
             per-ip-limit=3
             per-ip-window-seconds=10
@@ -63,6 +70,8 @@ class VelocityConfigTest {
             message.strong=Only trusted addresses are admitted
             message.backend-unavailable=Authentication unavailable
             message.auth-required=Authenticate first
+            message.premium-lookup-unavailable=Premium verification unavailable
+            message.session-channel-unavailable=Authentication channel unavailable
             """;
     }
 }

@@ -54,6 +54,7 @@ final class AutoAttackController {
 
     synchronized void observe(String ip, String username, long nowMillis) {
         prune(nowMillis);
+        if (global.size() >= strongThreshold) global.removeFirst();
         global.addLast(nowMillis);
         IpWindow window = ips.get(ip);
         if (window == null) {
@@ -64,6 +65,7 @@ final class AutoAttackController {
             window = new IpWindow();
             ips.put(ip, window);
         }
+        if (window.attempts.size() >= suspiciousAttempts) window.attempts.removeFirst();
         window.attempts.addLast(nowMillis);
         if (window.usernames.size() < suspiciousNames || window.usernames.containsKey(username.toLowerCase())) {
             window.usernames.put(username.toLowerCase(), nowMillis);
@@ -118,5 +120,9 @@ final class AutoAttackController {
             return window.attempts.isEmpty();
         });
         if (nowMillis >= overflowUntil) overflowUntil = 0;
+    }
+
+    synchronized int trackedAttemptCount() {
+        return global.size() + ips.values().stream().mapToInt(window -> window.attempts.size()).sum();
     }
 }

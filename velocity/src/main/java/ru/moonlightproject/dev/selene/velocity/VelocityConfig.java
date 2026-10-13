@@ -35,6 +35,11 @@ record VelocityConfig(
     boolean normalCaptcha,
     boolean forkEnabled,
     boolean mediumBeforeLogin,
+    boolean premiumLookupEnabled,
+    Duration premiumLookupTimeout,
+    int premiumLookupCacheCapacity,
+    Duration premiumLookupCacheTtl,
+    int premiumLookupConcurrency,
     int sessionCapacity,
     int perIpLimit,
     Duration perIpWindow,
@@ -48,7 +53,10 @@ record VelocityConfig(
         "per-ip-limit", "per-ip-window-seconds", "fork-enabled", "medium-before-login",
         "attack-auto", "attack-window-seconds", "attack-recovery-seconds",
         "attack-low-connections", "attack-medium-connections", "attack-strong-connections",
-        "suspicious-ip-connections", "suspicious-ip-usernames");
+        "suspicious-ip-connections", "suspicious-ip-usernames",
+        "premium-lookup-enabled", "premium-lookup-timeout-millis",
+        "premium-lookup-cache-capacity", "premium-lookup-cache-seconds",
+        "premium-lookup-concurrency");
 
     static VelocityConfig load(Path file) throws IOException {
         Properties properties = new Properties();
@@ -93,6 +101,11 @@ record VelocityConfig(
             bool(properties, "normal-captcha"),
             bool(properties, "fork-enabled"),
             bool(properties, "medium-before-login"),
+            bool(properties, "premium-lookup-enabled"),
+            Duration.ofMillis(positive(properties, "premium-lookup-timeout-millis")),
+            positive(properties, "premium-lookup-cache-capacity"),
+            Duration.ofSeconds(positive(properties, "premium-lookup-cache-seconds")),
+            positive(properties, "premium-lookup-concurrency"),
             positive(properties, "session-capacity"),
             positive(properties, "per-ip-limit"),
             Duration.ofSeconds(positive(properties, "per-ip-window-seconds")),

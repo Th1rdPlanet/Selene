@@ -27,23 +27,24 @@ public final class BackendGateway implements AuthGateway {
       throw new IllegalArgumentException("Invalid timeout");
     URI u = URI.create(endpoint);
     String scheme = u.getScheme();
-    MoonLightClient c;
+    SupervisedChannel.Connector connector;
     if ("unix".equals(scheme)) {
       if (u.getPath() == null || !u.getPath().startsWith("/"))
         throw new IllegalArgumentException("Absolute unix path required");
-      c = MoonLightClient.unix(Path.of(u.getPath()));
+      connector = () -> MoonLightClient.unix(Path.of(u.getPath()));
     } else if ("tls".equals(scheme)) {
       if (tls == null)
         throw new IllegalArgumentException("TLS context required");
-      c = MoonLightClient.tls(u.getHost(), u.getPort(), tls);
+      connector = () -> MoonLightClient.tls(u.getHost(), u.getPort(), tls);
     } else if ("tcp".equals(scheme) && allowLoopbackPlaintext
         && ("127.0.0.1".equals(u.getHost()) || "[::1]".equals(u.getHost())
             || "::1".equals(u.getHost())))
-      c = MoonLightClient.tcp(u.getHost(), u.getPort());
+      connector = () -> MoonLightClient.tcp(u.getHost(), u.getPort());
     else
       throw new IllegalArgumentException(
           "Only TLS, unix, or explicitly enabled loopback TCP allowed");
-    return new BackendGateway(c, timeout, 128);
+    MoonLightChannel initial = connector.open();
+    return new BackendGateway(new SupervisedChannel(initial, connector), timeout, 128);
   }
   public CompletableFuture<AuthReply> call(AuthRequest r) {
     if (!permits.tryAcquire())

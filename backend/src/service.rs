@@ -9,7 +9,7 @@ use argon2::{
 };
 use serde::Deserialize;
 use std::{
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     sync::Arc,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -28,6 +28,7 @@ pub struct Policy {
     pub trust_qualify_seconds: u64,
     pub trust_ttl_seconds: u64,
     pub password_workers: usize,
+    pub tombstone_capacity: usize,
 }
 impl Default for Policy {
     fn default() -> Self {
@@ -40,6 +41,7 @@ impl Default for Policy {
             trust_qualify_seconds: 600,
             trust_ttl_seconds: 604800,
             password_workers: 2,
+            tombstone_capacity: 20000,
         }
     }
 }
@@ -52,11 +54,11 @@ pub(crate) struct Session {
     pub(crate) challenge: Option<Challenge>,
     attempts: u32,
     pub(crate) authenticated: Option<Instant>,
-    closed: bool,
 }
 pub struct Service {
     storage: Storage,
     pub(crate) sessions: Mutex<HashMap<String, Session>>,
+    tombstones: Mutex<Tombstones>,
     policy: Policy,
     workers: Arc<Semaphore>,
 }
@@ -71,6 +73,7 @@ impl Service {
         anyhow::ensure!(
             policy.session_capacity > 0
                 && policy.password_workers > 0
+                && policy.tombstone_capacity > 0
                 && policy.max_attempts > 0
                 && policy.pending_seconds > 0
                 && policy.captcha_seconds > 0
@@ -81,6 +84,7 @@ impl Service {
         Ok(Self {
             storage: Storage::open(url).await?,
             sessions: Mutex::new(HashMap::new()),
+            tombstones: Mutex::new(Tombstones::default()),
             workers: Arc::new(Semaphore::new(policy.password_workers)),
             policy,
         })
@@ -131,9 +135,20 @@ impl Service {
             return Reply::status("BUSY", &id);
         };
         let time = Instant::now();
-        sessions.retain(|_, s| {
-            time < s.expires + Duration::from_secs(self.policy.authenticated_seconds)
-        });
+        let expired: Vec<String> = sessions
+            .iter()
+            .filter(|(_, session)| time >= session.expires)
+            .map(|(id, _)| id.clone())
+            .collect();
+        sessions.retain(|_, session| time < session.expires);
+        let mut tombstones = self.tombstones.lock().await;
+        tombstones.prune(time);
+        for expired_id in expired {
+            remember_tombstone(&mut tombstones, expired_id, time, &self.policy);
+        }
+        if tombstones.contains(&id) {
+            return Reply::status("EXPIRED", &id);
+        }
         if r.op == "begin" && !sessions.contains_key(&id) {
             if sessions.len() >= self.policy.session_capacity {
                 return Reply::status("BUSY", &id);
@@ -153,23 +168,26 @@ impl Service {
                     },
                     attempts: 0,
                     authenticated: None,
-                    closed: false,
                 },
             );
         }
+        if r.op == "close" {
+            let Some(s) = sessions.get(&id) else {
+                return Reply::status("EXPIRED", &id);
+            };
+            if s.name != r.username || s.ip != r.ip {
+                return Reply::status("INVALID_REQUEST", &id);
+            }
+            sessions.remove(&id);
+            remember_tombstone(&mut tombstones, id.clone(), time, &self.policy);
+            return Reply::status("CLOSED", &id);
+        }
+        drop(tombstones);
         let Some(s) = sessions.get_mut(&id) else {
             return Reply::status("EXPIRED", &id);
         };
         if s.name != r.username || s.ip != r.ip {
             return Reply::status("INVALID_REQUEST", &id);
-        }
-        if r.op == "close" {
-            s.closed = true;
-            s.authenticated = None;
-            return Reply::status("CLOSED", &id);
-        }
-        if s.closed || time >= s.expires {
-            return Reply::status("EXPIRED", &id);
         }
         if s.attempts >= self.policy.max_attempts {
             let mut reply = Reply::status("RATE_LIMITED", &id);
@@ -320,4 +338,57 @@ impl Service {
             Err(_) => Reply::status("UNAVAILABLE", &id),
         }
     }
+}
+
+#[derive(Default)]
+struct Tombstones {
+    ids: HashMap<String, Instant>,
+    order: VecDeque<(Instant, String)>,
+}
+
+impl Tombstones {
+    fn prune(&mut self, time: Instant) {
+        while self
+            .order
+            .front()
+            .is_some_and(|(expires, _)| *expires <= time)
+        {
+            let (expires, id) = self.order.pop_front().expect("front exists");
+            if self.ids.get(&id).is_some_and(|stored| *stored == expires) {
+                self.ids.remove(&id);
+            }
+        }
+    }
+
+    fn contains(&self, id: &str) -> bool {
+        self.ids.contains_key(id)
+    }
+
+    fn remember(&mut self, id: String, expires: Instant, capacity: usize) {
+        if self.ids.contains_key(&id) {
+            return;
+        }
+        while self.ids.len() >= capacity {
+            let Some((old_expiry, old_id)) = self.order.pop_front() else {
+                break;
+            };
+            if self
+                .ids
+                .get(&old_id)
+                .is_some_and(|stored| *stored == old_expiry)
+            {
+                self.ids.remove(&old_id);
+            }
+        }
+        self.ids.insert(id.clone(), expires);
+        self.order.push_back((expires, id));
+    }
+}
+
+fn remember_tombstone(tombstones: &mut Tombstones, id: String, time: Instant, policy: &Policy) {
+    tombstones.remember(
+        id,
+        time + Duration::from_secs(policy.pending_seconds),
+        policy.tombstone_capacity,
+    );
 }

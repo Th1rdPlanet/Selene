@@ -169,6 +169,9 @@ async fn capacity_and_close_tombstones_fail_closed() {
     assert_eq!(s.handle(r.clone()).await.status, "CLOSED");
     r.op = "begin".into();
     assert_eq!(s.handle(r).await.status, "EXPIRED");
+    let replacement = request("begin");
+    assert_eq!(s.handle(replacement).await.status, "REGISTER");
+    assert_eq!(s.sessions.lock().await.len(), 1);
 }
 
 #[tokio::test]

@@ -41,6 +41,19 @@ class AutoAttackControllerTest {
         assertTrue(controller.suspicious("192.0.2.2", 1_100));
     }
 
+    @Test
+    void sustainedFloodKeepsOnlyThresholdSizedAttemptHistory() {
+        AutoAttackController controller = new AutoAttackController(
+            2, Duration.ofSeconds(10), Duration.ofSeconds(10), 5, 7, 10, 3, 3);
+
+        for (int index = 0; index < 100_000; index++) {
+            controller.observe("192.0.2." + (index % 2), "user" + index, 1_000 + index / 100_000);
+        }
+
+        assertTrue(controller.trackedAttemptCount() <= 10 + 2 * 3);
+        assertEquals(AttackLevel.STRONG, controller.level(1_010));
+    }
+
     private static AutoAttackController controller() {
         return new AutoAttackController(
             64, Duration.ofSeconds(10), Duration.ofSeconds(10), 5, 7, 10, 3, 3);

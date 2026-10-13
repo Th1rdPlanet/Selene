@@ -19,6 +19,7 @@ final class ConnectionSessions {
         boolean premium,
         boolean captchaRequired
     ) {}
+    record Opened(Session session, Session replaced) {}
 
     private final int capacity;
     private final Map<UUID, Session> byConnection = new ConcurrentHashMap<>();
@@ -29,7 +30,7 @@ final class ConnectionSessions {
         this.capacity = capacity;
     }
 
-    synchronized Session open(
+    synchronized Opened open(
         UUID connectionId,
         String username,
         InetAddress address,
@@ -41,18 +42,20 @@ final class ConnectionSessions {
         }
         String canonical = username.toLowerCase(Locale.ROOT);
         UUID previousConnection = currentByUsername.put(canonical, connectionId);
-        if (previousConnection != null && !previousConnection.equals(connectionId)) {
-            byConnection.remove(previousConnection);
-        }
+        Session replaced = previousConnection != null && !previousConnection.equals(connectionId)
+            ? byConnection.remove(previousConnection) : null;
         Session session = new Session(
             UUID.randomUUID(), connectionId, username, canonical, address, premium, captchaRequired);
         byConnection.put(connectionId, session);
-        return session;
+        return new Opened(session, replaced);
     }
 
     Optional<AuthRequest> authorizeRelay(UUID connectionId, AuthRequest request) {
         Session session = byConnection.get(connectionId);
         if (session == null || !allowedRelayOperation(request.op())) return Optional.empty();
+        if (!request.session().equals(session.id().toString())) {
+            return Optional.empty();
+        }
         return Optional.of(new AuthRequest(
             request.op(), session.id().toString(), session.username(),
             session.address().getHostAddress(), request.password(), request.answer(),
