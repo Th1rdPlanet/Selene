@@ -50,6 +50,8 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
    Properties props=roleProperties(file,standalone);
    var tls=(!standalone || required(props,"endpoint").startsWith("tls:"))?tlsContext(file,props):null;
    gateway=standalone?BackendGateway.connect(required(props,"endpoint"),tls,strictBoolean(props,"allow-loopback-plaintext"),Duration.ofSeconds(5)):new RelayGateway(tls,required(props,"host"),positiveInt(props,"port"),Duration.ofSeconds(5),32);
+   if(standalone)getLogger().info("Selene STANDALONE backend endpoint: "+required(props,"endpoint"));
+   else getLogger().info("Selene PROXY_AUTH relay endpoint: "+required(props,"host")+":"+positiveInt(props,"port")+" (must match Velocity relay-bind)");
    captcha=standalone&&strictBoolean(props,"captcha-required");
    try{Class.forName("io.papermc.paper.dialog.Dialog");dialogCapable=true;}catch(ClassNotFoundException ignored){}
    getServer().getPluginManager().registerEvents(this,this);

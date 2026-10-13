@@ -6,6 +6,19 @@ On first startup configure `plugins/Selene/config.yml`. `PROXY_AUTH` creates/rea
 
 The first launch creates the role file and then stops safely until TLS is configured. The error log lists missing files and environment-variable names. For the default `PROXY_AUTH` role, place `paper-identity.p12` and `proxy-trust.p12` in `plugins/Selene/`, export `SELENE_PAPER_KEY_PASSWORD` and `SELENE_PAPER_TRUST_PASSWORD` in the service environment, and ensure `host`/`port` point to Velocity's `relay-bind` (default `localhost:38291`). Existing generated files are never overwritten when defaults change.
 
+In every `*-password-env` option the value is the **name of an operating-system environment variable**, not a password. For example, `key-password-env=SELENE_PAPER_KEY_PASSWORD` means Java reads the password from `System.getenv("SELENE_PAPER_KEY_PASSWORD")`. Define it in the same shell, systemd unit, Docker Compose service, or hosting-panel environment that starts Paper. Restarting only the Minecraft process without updating its service environment will not make a newly exported variable visible.
+
+`relay.properties` mapping:
+
+| Setting | Meaning |
+| --- | --- |
+| `host` | Private address/DNS of Velocity. Use `localhost` only when both processes share a host. |
+| `port` | Port from Velocity `relay-bind`; default `38291`. This is not the Minecraft player port. |
+| `key-store` | Paper's own PKCS12 private identity, relative to `plugins/Selene/`. |
+| `key-password-env` | Environment-variable name containing the identity-store password. |
+| `trust-store` | PKCS12 containing only the public CA/certificate trusted for Velocity. |
+| `trust-password-env` | Environment-variable name containing the trust-store password. |
+
 Standalone premium proof is exclusively `Bukkit.getOnlineMode()`. An offline-mode Paper cannot claim premium identity from UUIDs. Proxied deployments must use Velocity modern secure forwarding and prevent direct player access to the auth server; the relay owns authoritative player identity, IP, session, and premium status. Selene is an auth-server adapter, not a plugin to install on every destination server.
 
 Locked players use `/selene:captcha <digits>`, `/selene:login <password>`, and `/selene:register <password> <password>`. Only these namespaced roots reach Bukkit before authentication, so another plugin cannot shadow a short alias such as `/login`. Backend replies control progression. In `PROXY_AUTH`, Paper event guards prevent movement, inventory interaction, item use/drop/pickup, damage, public chat and unrelated commands; the player is also hidden according to local visibility settings. The auth server has no gameplay inventory to protect. In `STANDALONE`, PacketEvents additionally suppresses inventory/equipment packets and rejects interaction packets before Bukkit handlers because the real gameplay inventory exists there. Reconnects use distinct object identity and cannot inherit permission. Async callbacks check the exact session object before applying results. Disable/reload kicks existing players; hot reload is unsupported.
