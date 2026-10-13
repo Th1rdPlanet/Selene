@@ -21,6 +21,12 @@ struct Config {
 }
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    if rustls::crypto::CryptoProvider::get_default().is_none() {
+        rustls::crypto::aws_lc_rs::default_provider()
+            .install_default()
+            .map_err(|_| anyhow::anyhow!("failed to install rustls AWS-LC crypto provider"))?;
+    }
+
     let path = std::env::args()
         .nth(1)
         .unwrap_or_else(|| "backend/config.toml".into());
@@ -111,7 +117,7 @@ async fn main() -> anyhow::Result<()> {
         .with_limits(ServerLimits {
             max_connections: 64,
             max_buffered_request_bytes: 8 * 1024 * 1024,
-            frame_read_timeout: Duration::from_secs(10),
+            frame_read_timeout: Duration::from_secs(120),
             ..ServerLimits::default()
         })
         .run()

@@ -1174,6 +1174,7 @@ dependencies = [
  "moonlight-bridge-server",
  "png",
  "rand",
+ "rustls",
  "serde",
  "serde_json",
  "sqlx",
