@@ -55,6 +55,7 @@ messages:
   unavailable: 'Authentication unavailable. Please reconnect later.'
   timeout: 'Authentication timed out.'
   blocked: 'Complete authentication first.'
+  not-ready: 'This input is not expected yet. Follow the current authentication prompt.'
   usage: 'Use /login <password> or /register <password> <password>.'
   CAPTCHA: 'Read the map and enter the five digits in chat.'
   CAPTCHA_INVALID: 'Incorrect captcha. Read the map and try again.'

@@ -1,0 +1,11 @@
+package ru.moonlightproject.dev.selene.paper;
+
+enum AuthStage {
+ WAITING_FOR_SESSION,
+ WAITING_FOR_CAPTCHA,
+ WAITING_FOR_LOGIN,
+ WAITING_FOR_REGISTRATION,
+ SUBMITTING,
+ AUTHENTICATED,
+ CLOSED
+}

@@ -26,11 +26,12 @@ import java.util.logging.Level;
 public final class SelenePaper extends JavaPlugin implements Listener, PluginMessageListener {
  private static final String SESSION_CHANNEL="selene:session";
  private final Map<UUID,Session> sessions=new ConcurrentHashMap<>();
+ private final AuthFlow flow=new AuthFlow();
  private InventoryProtection inventoryProtection; private AuthGateway gateway; private boolean standalone,captcha,dialogCapable,packetEventsEnabled;
  private static final class Session {
-  final Player player; final Object inventoryConnection; final Location origin; String id=UUID.randomUUID().toString();
-  boolean authenticated,busy; MapView map; final Map<PotionEffectType,PotionEffect> previousEffects=new HashMap<>();
-  Session(Player p,Object connection){player=p;inventoryConnection=connection;origin=p.getLocation().clone();}
+  final Player player; final Object inventoryConnection; final Location origin; final AuthSession auth;
+  MapView map; final Map<PotionEffectType,PotionEffect> previousEffects=new HashMap<>();
+  Session(Player p,Object connection,AuthSession auth){player=p;inventoryConnection=connection;origin=p.getLocation().clone();this.auth=auth;}
  }
  @Override public void onEnable(){
   try {
@@ -90,43 +91,44 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
   // A standalone firewall stays registered while connections may still be flushing during shutdown.
  }
  private String msg(String key){return getConfig().getString("messages."+key,getConfig().getString("messages.unavailable",""));}
- private boolean locked(Player p){Session s=sessions.get(p.getUniqueId());return s==null||!s.authenticated;}
+ private boolean locked(Player p){Session s=sessions.get(p.getUniqueId());return s==null||s.auth.view().stage()!=AuthStage.AUTHENTICATED;}
  @EventHandler(priority=EventPriority.LOWEST) public void join(PlayerJoinEvent e){
   Player p=e.getPlayer();Object connection=packetEventsEnabled?inventoryProtection.open(p):null;
   if((packetEventsEnabled&&connection==null)||gateway==null){p.kick(net.kyori.adventure.text.Component.text(msg("unavailable")));return;}
-  Session s=new Session(p,connection);if(!standalone)s.id="";sessions.put(p.getUniqueId(),s);
+  long timeoutMillis=Math.max(10,getConfig().getLong("timeout-seconds",120))*1000;
+  AuthSession auth=flow.open(new ConnectionKey(p.getUniqueId(),p),System.currentTimeMillis()+timeoutMillis);
+  Session s=new Session(p,connection,auth);sessions.put(p.getUniqueId(),s);
   applyPresentation(s);
   if(getConfig().getBoolean("auth-location.enabled")){
    World w=Bukkit.getWorld(getConfig().getString("auth-location.world",""));
    if(w==null){p.kick(net.kyori.adventure.text.Component.text(msg("unavailable")));return;}
    p.teleport(new Location(w,getConfig().getDouble("auth-location.x"),getConfig().getDouble("auth-location.y"),getConfig().getDouble("auth-location.z")));
   }
-  Bukkit.getScheduler().runTaskLater(this,()->{if(current(s)&&!s.authenticated)p.kick(net.kyori.adventure.text.Component.text(msg("timeout")));},Math.max(10,getConfig().getLong("timeout-seconds",120))*20);
-  if(standalone)request(s,"begin","","");
+  Bukkit.getScheduler().runTaskLater(this,()->{if(current(s)&&s.auth.view().stage()!=AuthStage.AUTHENTICATED)p.kick(net.kyori.adventure.text.Component.text(msg("timeout")));},timeoutMillis/50);
+  if(standalone){flow.bindToken(s.auth,UUID.randomUUID().toString());request(s,"begin","","");}
  }
  @Override public void onPluginMessageReceived(String channel,Player p,byte[] message){
   if(standalone||!channel.equals(SESSION_CHANNEL)||message.length!=16)return;
   Session s=sessions.get(p.getUniqueId());if(s==null||s.player!=p)return;
   var bytes=java.nio.ByteBuffer.wrap(message);String token=new UUID(bytes.getLong(),bytes.getLong()).toString();
-  if(!s.id.isEmpty()&&!s.id.equals(token))return;
-  boolean first=s.id.isEmpty();s.id=token;p.sendPluginMessage(this,SESSION_CHANNEL,message);if(first)request(s,"begin","","");
+  String existing=s.auth.view().sessionId();if(!existing.isEmpty()&&!existing.equals(token))return;
+  boolean first=existing.isEmpty();if(first&&!flow.bindToken(s.auth,token))return;p.sendPluginMessage(this,SESSION_CHANNEL,message);if(first)request(s,"begin","","");
  }
- private boolean current(Session s){return sessions.get(s.player.getUniqueId())==s&&s.player.isOnline();}
- private AuthRequest dto(Session s,String op,String password,String answer){return new AuthRequest(op,s.id,s.player.getName(),s.player.getAddress().getAddress().getHostAddress(),password,answer,standalone&&Bukkit.getOnlineMode(),captcha);}
+ private boolean current(Session s){return sessions.get(s.player.getUniqueId())==s&&flow.isCurrent(s.auth)&&s.player.isOnline();}
+ private AuthRequest dto(Session s,String op,String password,String answer){return new AuthRequest(op,s.auth.view().sessionId(),s.player.getName(),s.player.getAddress().getAddress().getHostAddress(),password,answer,standalone&&Bukkit.getOnlineMode(),captcha);}
  private void request(Session s,String op,String password,String answer){
-  if(s.busy||s.authenticated)return;s.busy=true;
-  gateway.call(dto(s,op,password,answer)).whenComplete((reply,error)->{
+  String requestSession=s.auth.view().sessionId();gateway.call(dto(s,op,password,answer)).whenComplete((reply,error)->{
    if(!isEnabled())return;
    Bukkit.getScheduler().runTask(this,()->{
-    if(!current(s))return;s.busy=false;
+    if(!current(s))return;
     if(error!=null||reply==null){s.player.kick(net.kyori.adventure.text.Component.text(msg("unavailable")));return;}
-    if(!reply.session().equals(s.id)){s.player.kick(net.kyori.adventure.text.Component.text(msg("unavailable")));return;}
+    if(!flow.accept(s.auth,requestSession,reply,System.currentTimeMillis())){s.player.kick(net.kyori.adventure.text.Component.text(msg("unavailable")));return;}
     switch(reply.status()){
-     case "AUTHENTICATED" -> {s.authenticated=true;if(packetEventsEnabled)inventoryProtection.authenticate(s.inventoryConnection);restorePresentation(s);releaseMap(s);s.player.updateInventory();s.player.teleport(s.origin);s.player.sendMessage(msg("AUTHENTICATED"));}
+     case "AUTHENTICATED" -> {if(packetEventsEnabled)inventoryProtection.authenticate(s.inventoryConnection);restorePresentation(s);releaseMap(s);s.player.updateInventory();s.player.teleport(s.origin);s.player.sendMessage(msg("AUTHENTICATED"));}
      case "CAPTCHA" -> {try{showMap(s,reply.image());s.player.sendMessage(msg("CAPTCHA"));}catch(Exception ex){s.player.kick(net.kyori.adventure.text.Component.text(msg("unavailable")));}}
      case "LOGIN","REGISTER" -> {String text=msg(reply.status());s.player.sendMessage(text);if(dialogCapable&&getConfig().getBoolean("dialogs"))try{AuthNotice.show(s.player,msg("dialog-title"),text,msg("dialog-close"));}catch(LinkageError ignored){}}
      case "CAPTCHA_INVALID","INVALID_CREDENTIALS","ACCOUNT_EXISTS","RATE_LIMITED","BUSY" -> s.player.sendMessage(msg(reply.status()));
-     default -> {String key=AuthInputValidation.messageKeyForStatus(reply.status());if(key==null)s.player.kick(net.kyori.adventure.text.Component.text(msg("unavailable")));else s.player.sendMessage(msg(key));}
+     default -> {String key=AuthInputValidation.messageKeyForStatus(reply.status());if(key==null)s.player.kick(net.kyori.adventure.text.Component.text(msg("unavailable")));else if(reply.status().equals("EXPIRED"))s.player.kick(net.kyori.adventure.text.Component.text(msg(key)));else s.player.sendMessage(msg(key));}
     }
    });
   });
@@ -149,16 +151,18 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
   s.map.getRenderers().forEach(s.map::removeRenderer);s.map=null;
  }}
  @Override public boolean onCommand(CommandSender sender,Command cmd,String label,String[] args){
-  if(!(sender instanceof Player p))return true;Session s=sessions.get(p.getUniqueId());if(s==null||s.authenticated)return true;
+  if(!(sender instanceof Player p))return true;Session s=sessions.get(p.getUniqueId());if(s==null||s.auth.view().stage()==AuthStage.AUTHENTICATED)return true;
   String name=cmd.getName();
   if((name.equals("register")&&args.length!=2)||(!name.equals("register")&&args.length!=1)){p.sendMessage(msg("usage"));return true;}
   AuthInputValidation.ValidationResult validation=name.equals("register")
    ?AuthInputValidation.registration(args[0],args[1],8,256)
    :AuthInputValidation.password(args[0],8,256);
   if(!validation.valid()){p.sendMessage(msg(validation.messageKey()));return true;}
+  boolean accepted=name.equals("register")?flow.submitRegistration(s.auth,args[0],args[1]):flow.submitLogin(s.auth,args[0]);
+  if(!accepted){p.sendMessage(msg("not-ready"));return true;}
   request(s,name,args[0],"");return true;
  }
- @EventHandler public void quit(PlayerQuitEvent e){Session s=sessions.get(e.getPlayer().getUniqueId());if(s!=null&&s.player==e.getPlayer()&&sessions.remove(e.getPlayer().getUniqueId(),s)){if(packetEventsEnabled)inventoryProtection.close(s.inventoryConnection);restorePresentation(s);releaseMap(s);gateway.call(dto(s,"close","",""));}}
+ @EventHandler public void quit(PlayerQuitEvent e){Session s=sessions.get(e.getPlayer().getUniqueId());if(s!=null&&s.player==e.getPlayer()&&sessions.remove(e.getPlayer().getUniqueId(),s)){if(packetEventsEnabled)inventoryProtection.close(s.inventoryConnection);restorePresentation(s);releaseMap(s);gateway.call(dto(s,"close","",""));flow.close(s.auth);}}
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void move(PlayerMoveEvent e){if(locked(e.getPlayer())&&e.hasChangedPosition())e.setTo(e.getFrom());}
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void teleport(PlayerTeleportEvent e){if(locked(e.getPlayer())&&e.getCause()!=PlayerTeleportEvent.TeleportCause.PLUGIN)e.setCancelled(true);}
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void command(PlayerCommandPreprocessEvent e){if(locked(e.getPlayer())){String c=e.getMessage().split(" ",2)[0].substring(1);if(!PacketPolicy.allowCommand(c)){e.setCancelled(true);e.getPlayer().sendMessage(msg("blocked"));}}}
