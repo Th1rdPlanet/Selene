@@ -1,5 +1,7 @@
 # PROXY_AUTH uses only relay.properties. STANDALONE uses only standalone.properties.
 role: PROXY_AUTH
+# AUTO enables PacketEvents only for STANDALONE. ENABLED and DISABLED override it.
+packet-events-mode: AUTO
 stage: AFTER_JOIN
 captcha-view: MAP
 # Native notice dialogs on 1.21.8+ clients; older clients receive chat instructions.

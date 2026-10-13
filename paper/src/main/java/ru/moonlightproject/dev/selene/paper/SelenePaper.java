@@ -1,10 +1,5 @@
 package ru.moonlightproject.dev.selene.paper;
 
-import com.github.retrooper.packetevents.PacketEvents;
-import com.github.retrooper.packetevents.protocol.player.User;
-import com.github.retrooper.packetevents.protocol.player.ClientVersion;
-import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerSetSlot;
-import io.github.retrooper.packetevents.util.SpigotConversionUtil;
 import ru.moonlightproject.dev.selene.core.*;
 import org.bukkit.*;
 import org.bukkit.command.*;
@@ -29,21 +24,25 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class SelenePaper extends JavaPlugin implements Listener, PluginMessageListener {
  private static final String SESSION_CHANNEL="selene:session";
  private final Map<UUID,Session> sessions=new ConcurrentHashMap<>();
- private InventoryFirewall firewall; private AuthGateway gateway; private boolean standalone,captcha,dialogCapable;
+ private InventoryProtection inventoryProtection; private AuthGateway gateway; private boolean standalone,captcha,dialogCapable,packetEventsEnabled;
  private static final class Session {
-  final Player player; final User user; final Location origin; String id=UUID.randomUUID().toString();
+  final Player player; final Object inventoryConnection; final Location origin; String id=UUID.randomUUID().toString();
   boolean authenticated,busy; MapView map; final Map<PotionEffectType,PotionEffect> previousEffects=new HashMap<>();
-  Session(Player p,User u){player=p;user=u;origin=p.getLocation().clone();}
+  Session(Player p,Object connection){player=p;inventoryConnection=connection;origin=p.getLocation().clone();}
  }
  @Override public void onEnable(){
   try {
    saveDefaultConfig();
-   if(!getServer().getPluginManager().isPluginEnabled("packetevents"))throw new IllegalStateException("PacketEvents is required");
    if(!"AFTER_JOIN".equals(getConfig().getString("stage")) || !"MAP".equals(getConfig().getString("captcha-view")))throw new IllegalArgumentException("Only AFTER_JOIN with MAP captcha is implemented");
    String role=getConfig().getString("role",""); if(!Set.of("STANDALONE","PROXY_AUTH").contains(role))throw new IllegalArgumentException("Invalid role"); standalone=role.equals("STANDALONE");
+   String packetMode=getConfig().getString("packet-events-mode","AUTO").toUpperCase(Locale.ROOT);
+   if(!Set.of("AUTO","ENABLED","DISABLED").contains(packetMode))throw new IllegalArgumentException("packet-events-mode must be AUTO, ENABLED or DISABLED");
+   packetEventsEnabled=packetMode.equals("ENABLED")||(packetMode.equals("AUTO")&&standalone);
+   if(packetEventsEnabled&&!getServer().getPluginManager().isPluginEnabled("packetevents"))throw new IllegalStateException("PacketEvents is enabled but unavailable");
+   if(standalone&&!packetEventsEnabled)getLogger().warning("PacketEvents is disabled in STANDALONE mode; the client can receive the real inventory before authentication");
    String pack=getConfig().getString("resource-pack-provider","NONE");
    if(!Set.of("NONE","Oraxen","ItemsAdder").contains(pack) || (!pack.equals("NONE")&&getServer().getPluginManager().getPlugin(pack)==null))throw new IllegalArgumentException("Configured external pack manager is unavailable");
-   firewall=new InventoryFirewall(); PacketEvents.getAPI().getEventManager().registerListener(firewall);
+   if(packetEventsEnabled)inventoryProtection=new PacketEventsInventoryProtection();
    String file=standalone?"standalone.properties":"relay.properties"; if(!new File(getDataFolder(),file).exists())saveResource(file,false);
    Properties props=roleProperties(file,standalone);
    var tls=(!standalone || required(props,"endpoint").startsWith("tls:"))?TlsContexts.load(new File(getDataFolder(),required(props,"key-store")).toPath(),required(props,"key-password-env"),new File(getDataFolder(),required(props,"trust-store")).toPath(),required(props,"trust-password-env")):null;
@@ -74,14 +73,14 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
  sessions.clear();if(gateway!=null)gateway.close();
   getServer().getMessenger().unregisterIncomingPluginChannel(this,SESSION_CHANNEL,this);
   getServer().getMessenger().unregisterOutgoingPluginChannel(this,SESSION_CHANNEL);
-  // Do not unregister firewall while connections may still be flushing during shutdown.
+  // A standalone firewall stays registered while connections may still be flushing during shutdown.
  }
  private String msg(String key){return getConfig().getString("messages."+key,getConfig().getString("messages.unavailable",""));}
  private boolean locked(Player p){Session s=sessions.get(p.getUniqueId());return s==null||!s.authenticated;}
  @EventHandler(priority=EventPriority.LOWEST) public void join(PlayerJoinEvent e){
-  Player p=e.getPlayer(); User u=PacketEvents.getAPI().getPlayerManager().getUser(p);
-  if(u==null||gateway==null){p.kick(net.kyori.adventure.text.Component.text(msg("unavailable")));return;}
-  Session s=new Session(p,u);if(!standalone)s.id="";sessions.put(p.getUniqueId(),s);firewall.gate.open(u);
+  Player p=e.getPlayer();Object connection=packetEventsEnabled?inventoryProtection.open(p):null;
+  if((packetEventsEnabled&&connection==null)||gateway==null){p.kick(net.kyori.adventure.text.Component.text(msg("unavailable")));return;}
+  Session s=new Session(p,connection);if(!standalone)s.id="";sessions.put(p.getUniqueId(),s);
   applyPresentation(s);
   if(getConfig().getBoolean("auth-location.enabled")){
    World w=Bukkit.getWorld(getConfig().getString("auth-location.world",""));
@@ -109,9 +108,9 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
     if(error!=null||reply==null){s.player.kick(net.kyori.adventure.text.Component.text(msg("unavailable")));return;}
     if(!reply.session().equals(s.id)){s.player.kick(net.kyori.adventure.text.Component.text(msg("unavailable")));return;}
     switch(reply.status()){
-     case "AUTHENTICATED" -> {s.authenticated=true;firewall.gate.authenticate(s.user);restorePresentation(s);s.player.updateInventory();s.player.teleport(s.origin);s.player.sendMessage(msg("AUTHENTICATED"));releaseMap(s);}
+     case "AUTHENTICATED" -> {s.authenticated=true;if(packetEventsEnabled)inventoryProtection.authenticate(s.inventoryConnection);restorePresentation(s);releaseMap(s);s.player.updateInventory();s.player.teleport(s.origin);s.player.sendMessage(msg("AUTHENTICATED"));}
      case "CAPTCHA" -> {try{showMap(s,reply.image());s.player.sendMessage(msg("CAPTCHA"));}catch(Exception ex){s.player.kick(net.kyori.adventure.text.Component.text(msg("unavailable")));}}
-     case "LOGIN","REGISTER" -> {String text=msg(reply.status());s.player.sendMessage(text);if(dialogCapable&&getConfig().getBoolean("dialogs")&&s.user.getClientVersion().isNewerThanOrEquals(ClientVersion.V_1_21_6))try{AuthNotice.show(s.player,msg("dialog-title"),text,msg("dialog-close"));}catch(LinkageError ignored){}}
+     case "LOGIN","REGISTER" -> {String text=msg(reply.status());s.player.sendMessage(text);if(dialogCapable&&getConfig().getBoolean("dialogs"))try{AuthNotice.show(s.player,msg("dialog-title"),text,msg("dialog-close"));}catch(LinkageError ignored){}}
      case "CAPTCHA_INVALID","INVALID_CREDENTIALS","ACCOUNT_EXISTS","RATE_LIMITED","BUSY" -> s.player.sendMessage(msg(reply.status()));
      default -> s.player.kick(net.kyori.adventure.text.Component.text(msg("unavailable")));
     }
@@ -125,11 +124,16 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
   releaseMap(s);MapView view=Bukkit.createMap(s.player.getWorld());s.map=view;view.getRenderers().forEach(view::removeRenderer);
   view.addRenderer(new MapRenderer(true){@Override public void render(MapView v,MapCanvas c,Player p){if(p.equals(s.player))c.drawImage(0,0,MapPalette.resizeImage(image));}});
   ItemStack item=new ItemStack(Material.FILLED_MAP);MapMeta meta=(MapMeta)item.getItemMeta();meta.setMapView(view);item.setItemMeta(meta);
-  // Virtual off-hand: never mutate or clear the persistent inventory.
-  s.user.sendPacketSilently(new WrapperPlayServerSetSlot(0,0,45,SpigotConversionUtil.fromBukkitItemStack(item)));
+  if(packetEventsEnabled){
+   // Virtual off-hand: never mutate or clear the persistent inventory.
+   inventoryProtection.sendVirtualOffhand(s.inventoryConnection,item);
+  }else s.player.getInventory().setItemInOffHand(item);
   s.player.sendMap(view);
  }
- private void releaseMap(Session s){if(s.map!=null){s.map.getRenderers().forEach(s.map::removeRenderer);s.map=null;}}
+ private void releaseMap(Session s){if(s.map!=null){
+  if(!packetEventsEnabled){ItemStack held=s.player.getInventory().getItemInOffHand();if(held.getItemMeta() instanceof MapMeta meta&&meta.getMapView()==s.map)s.player.getInventory().setItemInOffHand(new ItemStack(Material.AIR));}
+  s.map.getRenderers().forEach(s.map::removeRenderer);s.map=null;
+ }}
  @Override public boolean onCommand(CommandSender sender,Command cmd,String label,String[] args){
   if(!(sender instanceof Player p))return true;Session s=sessions.get(p.getUniqueId());if(s==null||s.authenticated)return true;
   String name=cmd.getName();
@@ -138,7 +142,7 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
   if(name.equals("captcha")&&!args[0].matches("[0-9]{1,12}")){p.sendMessage(msg("usage"));return true;}
   request(s,name.equals("captcha")?"answer":name,name.equals("captcha")?"":args[0],name.equals("captcha")?args[0]:"");return true;
  }
- @EventHandler public void quit(PlayerQuitEvent e){Session s=sessions.get(e.getPlayer().getUniqueId());if(s!=null&&s.player==e.getPlayer()&&sessions.remove(e.getPlayer().getUniqueId(),s)){firewall.gate.close(s.user);restorePresentation(s);releaseMap(s);gateway.call(dto(s,"close","",""));}}
+ @EventHandler public void quit(PlayerQuitEvent e){Session s=sessions.get(e.getPlayer().getUniqueId());if(s!=null&&s.player==e.getPlayer()&&sessions.remove(e.getPlayer().getUniqueId(),s)){if(packetEventsEnabled)inventoryProtection.close(s.inventoryConnection);restorePresentation(s);releaseMap(s);gateway.call(dto(s,"close","",""));}}
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void move(PlayerMoveEvent e){if(locked(e.getPlayer())&&e.hasChangedPosition())e.setTo(e.getFrom());}
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void teleport(PlayerTeleportEvent e){if(locked(e.getPlayer())&&e.getCause()!=PlayerTeleportEvent.TeleportCause.PLUGIN)e.setCancelled(true);}
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void command(PlayerCommandPreprocessEvent e){if(locked(e.getPlayer())){String c=e.getMessage().split(" ",2)[0].toLowerCase(Locale.ROOT);if(!Set.of("/selene:login","/selene:register","/selene:captcha").contains(c)){e.setCancelled(true);e.getPlayer().sendMessage(msg("blocked"));}}}
