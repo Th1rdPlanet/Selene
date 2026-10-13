@@ -8,7 +8,7 @@ import org.bukkit.entity.Player;
 import java.util.List;
 /** Isolated class, loaded only after checking server and client capabilities. */
 final class AuthNotice {
- static void show(Player p,String title,String text,String close){
-  p.showDialog(Dialog.create(f->f.empty().base(DialogBase.builder(Component.text(title)).body(List.of(DialogBody.plainMessage(Component.text(text)))).build()).type(DialogType.notice(ActionButton.builder(Component.text(close)).build()))));
+ static void show(Player p,Component title,Component text,Component close){
+  p.showDialog(Dialog.create(f->f.empty().base(DialogBase.builder(title).body(List.of(DialogBody.plainMessage(text))).build()).type(DialogType.notice(ActionButton.builder(close).build()))));
  }
 }

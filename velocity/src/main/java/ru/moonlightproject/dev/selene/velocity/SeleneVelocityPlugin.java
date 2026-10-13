@@ -83,6 +83,9 @@ public final class SeleneVelocityPlugin {
                 Path configFile = dataDirectory.resolve("velocity.properties");
                 installDefaultConfig(configFile);
                 VelocityConfig config = VelocityConfig.load(configFile);
+                VelocityMessages messages = new VelocityMessages(config.messages(), Set.of(
+                    "denied", "busy", "strong", "backend-unavailable", "auth-required",
+                    "premium-lookup-unavailable", "session-channel-unavailable"));
                 ForkCapabilities fork = findForkCapabilities();
                 if (config.forkEnabled() && !fork.supportsEarlyAdmission()) {
                     throw new IllegalStateException("fork-enabled requires a compatible Selene fork API provider");
@@ -111,7 +114,7 @@ public final class SeleneVelocityPlugin {
                     tls, config.relayBind(), Duration.ofSeconds(3), 64,
                     (request, fingerprint) -> relay(request, fingerprint));
                 runtime = new RuntimeState(
-                    config, backend, admission, attacks, sessions, identities, premiumLookup, relay, fork);
+                    config, messages, backend, admission, attacks, sessions, identities, premiumLookup, relay, fork);
                 proxy.getChannelRegistrar().register(SESSION_CHANNEL);
                 refreshSnapshot();
                 proxy.getScheduler().buildTask(this, this::refreshSnapshot)
@@ -411,7 +414,7 @@ public final class SeleneVelocityPlugin {
 
     private Component text(String key) {
         RuntimeState state = runtime;
-        return Component.text(state == null ? "Authentication unavailable" : state.config().message(key));
+        return state == null ? Component.text("Authentication unavailable") : state.messages().component(key);
     }
 
     private static AuthRequest boundRequest(
@@ -442,6 +445,7 @@ public final class SeleneVelocityPlugin {
 
     private record RuntimeState(
         VelocityConfig config,
+        VelocityMessages messages,
         AuthGateway backend,
         AdmissionPolicy admission,
         AutoAttackController attacks,

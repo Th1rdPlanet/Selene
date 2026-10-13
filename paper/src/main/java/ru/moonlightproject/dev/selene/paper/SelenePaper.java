@@ -27,7 +27,7 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
  private static final String SESSION_CHANNEL="selene:session";
  private final Map<UUID,Session> sessions=new ConcurrentHashMap<>();
  private final AuthFlow flow=new AuthFlow();
- private InventoryProtection inventoryProtection; private AuthGateway gateway; private boolean standalone,captcha,dialogCapable,packetEventsEnabled;
+ private InventoryProtection inventoryProtection; private AuthGateway gateway; private AuthMessages messages; private boolean standalone,captcha,dialogCapable,packetEventsEnabled;
  private static final class Session {
   final Player player; final Object inventoryConnection; final Location origin; final AuthSession auth;
   MapView map; final Map<PotionEffectType,PotionEffect> previousEffects=new HashMap<>();
@@ -36,6 +36,11 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
  @Override public void onEnable(){
   try {
    saveDefaultConfig();
+   Map<String,String> templates=new HashMap<>();var messageSection=getConfig().getConfigurationSection("messages");
+   if(messageSection==null)throw new IllegalArgumentException("Missing configuration section: messages");
+   for(String key:messageSection.getKeys(false)){Object value=messageSection.get(key);if(!(value instanceof String text))throw new IllegalArgumentException("Message must be text: messages."+key);templates.put("messages."+key,text);}
+   messages=new AuthMessages(templates);
+   for(String key:List.of("unavailable","timeout","blocked","usage","CAPTCHA","CAPTCHA_INVALID","LOGIN","REGISTER","AUTHENTICATED","INVALID_CREDENTIALS","ACCOUNT_EXISTS","RATE_LIMITED","BUSY","password-too-short","password-too-long","password-mismatch","captcha-format","INVALID_REQUEST","EXPIRED","UNAVAILABLE","not-ready","dialog-title","dialog-close"))messages.component("messages."+key);
    if(!"AFTER_JOIN".equals(getConfig().getString("stage")) || !"MAP".equals(getConfig().getString("captcha-view")))throw new IllegalArgumentException("Only AFTER_JOIN with MAP captcha is implemented");
    String role=getConfig().getString("role",""); if(!Set.of("STANDALONE","PROXY_AUTH").contains(role))throw new IllegalArgumentException("Invalid role"); standalone=role.equals("STANDALONE");
    String packetMode=getConfig().getString("packet-events-mode","AUTO").toUpperCase(Locale.ROOT);
@@ -59,7 +64,7 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
    if(!standalone){getServer().getMessenger().registerIncomingPluginChannel(this,SESSION_CHANNEL,this);getServer().getMessenger().registerOutgoingPluginChannel(this,SESSION_CHANNEL);}
    for(String command:List.of("login","register")){getCommand(command).setExecutor(this);getCommand(command).setTabCompleter((s,c,a,args)->List.of());}
    // Reload is unsupported: no existing connection may inherit authentication.
-   for(Player p:Bukkit.getOnlinePlayers())p.kick(net.kyori.adventure.text.Component.text(msg("unavailable")));
+   for(Player p:Bukkit.getOnlinePlayers())p.kick(msg("unavailable"));
   }catch(Exception | LinkageError e){String reason=e.getMessage()==null?e.getClass().getSimpleName():e.getMessage();getLogger().log(Level.SEVERE,"Selene could not initialize securely: "+reason+". Stopping server.",e);Bukkit.shutdown();}
  }
  private javax.net.ssl.SSLContext tlsContext(String file,Properties props)throws Exception{
@@ -84,27 +89,27 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
  private static boolean strictBoolean(Properties props,String key){String value=required(props,key);if(!value.equalsIgnoreCase("true")&&!value.equalsIgnoreCase("false"))throw new IllegalArgumentException("Setting must be true or false: "+key);return Boolean.parseBoolean(value);}
  private static int positiveInt(Properties props,String key){int value=Integer.parseInt(required(props,key));if(value<1||value>65535)throw new IllegalArgumentException("Setting must be a valid port: "+key);return value;}
  @Override public void onDisable(){
-  for(Session s:sessions.values())s.player.kick(net.kyori.adventure.text.Component.text(msg("unavailable")));
+  for(Session s:sessions.values())s.player.kick(msg("unavailable"));
  sessions.clear();if(gateway!=null)gateway.close();
   getServer().getMessenger().unregisterIncomingPluginChannel(this,SESSION_CHANNEL,this);
   getServer().getMessenger().unregisterOutgoingPluginChannel(this,SESSION_CHANNEL);
   // A standalone firewall stays registered while connections may still be flushing during shutdown.
  }
- private String msg(String key){return getConfig().getString("messages."+key,getConfig().getString("messages.unavailable",""));}
+ private net.kyori.adventure.text.Component msg(String key){return messages.component("messages."+key);}
  private boolean locked(Player p){Session s=sessions.get(p.getUniqueId());return s==null||s.auth.view().stage()!=AuthStage.AUTHENTICATED;}
  @EventHandler(priority=EventPriority.LOWEST) public void join(PlayerJoinEvent e){
   Player p=e.getPlayer();Object connection=packetEventsEnabled?inventoryProtection.open(p):null;
-  if((packetEventsEnabled&&connection==null)||gateway==null){p.kick(net.kyori.adventure.text.Component.text(msg("unavailable")));return;}
+  if((packetEventsEnabled&&connection==null)||gateway==null){p.kick(msg("unavailable"));return;}
   long timeoutMillis=Math.max(10,getConfig().getLong("timeout-seconds",120))*1000;
   AuthSession auth=flow.open(new ConnectionKey(p.getUniqueId(),p),System.currentTimeMillis()+timeoutMillis);
   Session s=new Session(p,connection,auth);sessions.put(p.getUniqueId(),s);
   applyPresentation(s);
   if(getConfig().getBoolean("auth-location.enabled")){
    World w=Bukkit.getWorld(getConfig().getString("auth-location.world",""));
-   if(w==null){p.kick(net.kyori.adventure.text.Component.text(msg("unavailable")));return;}
+   if(w==null){p.kick(msg("unavailable"));return;}
    p.teleport(new Location(w,getConfig().getDouble("auth-location.x"),getConfig().getDouble("auth-location.y"),getConfig().getDouble("auth-location.z")));
   }
-  Bukkit.getScheduler().runTaskLater(this,()->{if(current(s)&&s.auth.view().stage()!=AuthStage.AUTHENTICATED)p.kick(net.kyori.adventure.text.Component.text(msg("timeout")));},timeoutMillis/50);
+  Bukkit.getScheduler().runTaskLater(this,()->{if(current(s)&&s.auth.view().stage()!=AuthStage.AUTHENTICATED)p.kick(msg("timeout"));},timeoutMillis/50);
   if(standalone){flow.bindToken(s.auth,UUID.randomUUID().toString());request(s,"begin","","");}
  }
  @Override public void onPluginMessageReceived(String channel,Player p,byte[] message){
@@ -121,14 +126,14 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
    if(!isEnabled())return;
    Bukkit.getScheduler().runTask(this,()->{
     if(!current(s))return;
-    if(error!=null||reply==null){s.player.kick(net.kyori.adventure.text.Component.text(msg("unavailable")));return;}
-    if(!flow.accept(s.auth,requestSession,reply,System.currentTimeMillis())){s.player.kick(net.kyori.adventure.text.Component.text(msg("unavailable")));return;}
+    if(error!=null||reply==null){s.player.kick(msg("unavailable"));return;}
+    if(!flow.accept(s.auth,requestSession,reply,System.currentTimeMillis())){s.player.kick(msg("unavailable"));return;}
     switch(reply.status()){
      case "AUTHENTICATED" -> {if(packetEventsEnabled)inventoryProtection.authenticate(s.inventoryConnection);restorePresentation(s);releaseMap(s);s.player.updateInventory();s.player.teleport(s.origin);s.player.sendMessage(msg("AUTHENTICATED"));}
-     case "CAPTCHA" -> {try{showMap(s,reply.image());s.player.sendMessage(msg("CAPTCHA"));}catch(Exception ex){s.player.kick(net.kyori.adventure.text.Component.text(msg("unavailable")));}}
-     case "LOGIN","REGISTER" -> {String text=msg(reply.status());s.player.sendMessage(text);if(dialogCapable&&getConfig().getBoolean("dialogs"))try{AuthNotice.show(s.player,msg("dialog-title"),text,msg("dialog-close"));}catch(LinkageError ignored){}}
+     case "CAPTCHA" -> {try{showMap(s,reply.image());s.player.sendMessage(msg("CAPTCHA"));}catch(Exception ex){s.player.kick(msg("unavailable"));}}
+     case "LOGIN","REGISTER" -> {var text=msg(reply.status());s.player.sendMessage(text);if(dialogCapable&&getConfig().getBoolean("dialogs"))try{AuthNotice.show(s.player,msg("dialog-title"),text,msg("dialog-close"));}catch(LinkageError ignored){}}
      case "CAPTCHA_INVALID","INVALID_CREDENTIALS","ACCOUNT_EXISTS","RATE_LIMITED","BUSY" -> s.player.sendMessage(msg(reply.status()));
-     default -> {String key=AuthInputValidation.messageKeyForStatus(reply.status());if(key==null)s.player.kick(net.kyori.adventure.text.Component.text(msg("unavailable")));else if(reply.status().equals("EXPIRED"))s.player.kick(net.kyori.adventure.text.Component.text(msg(key)));else s.player.sendMessage(msg(key));}
+     default -> {String key=AuthInputValidation.messageKeyForStatus(reply.status());if(key==null)s.player.kick(msg("unavailable"));else if(reply.status().equals("EXPIRED"))s.player.kick(msg(key));else s.player.sendMessage(msg(key));}
     }
    });
   });

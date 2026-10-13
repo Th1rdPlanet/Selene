@@ -49,29 +49,31 @@ auth-location:
 # NONE, Oraxen, ItemsAdder. Выбранный плагин должен быть установлен на этом Paper.
 resource-pack-provider: NONE
 
-# Все сообщения Paper и весь текст диалогов настраиваются здесь.
-# Плейсхолдеров в текущей версии нет.
+# Все сообщения Paper и весь текст диалогов поддерживают MiniMessage.
+# Можно использовать теги <color>, <bold>, <font:key> и глифы вашего Oraxen/ItemsAdder pack.
+# Динамические значения Selene подставляет как обычный текст, поэтому они не могут
+# внедрить click/hover-теги.
 messages:
-  unavailable: 'Authentication unavailable. Please reconnect later.'
-  timeout: 'Authentication timed out.'
-  blocked: 'Complete authentication first.'
-  not-ready: 'This input is not expected yet. Follow the current authentication prompt.'
-  usage: 'Use /login <password> or /register <password> <password>.'
-  CAPTCHA: 'Read the map and enter the five digits in chat.'
-  CAPTCHA_INVALID: 'Incorrect captcha. Read the map and try again.'
-  LOGIN: 'Enter /login <password>.'
-  REGISTER: 'Enter /register <password> <password>.'
-  AUTHENTICATED: 'Authentication complete.'
-  INVALID_CREDENTIALS: 'Incorrect credentials.'
-  ACCOUNT_EXISTS: 'Account already exists. Use /login <password>.'
-  RATE_LIMITED: 'Too many attempts. Please wait.'
-  BUSY: 'Authentication is busy. Please wait.'
-  password-too-short: 'Password must contain at least 8 characters.'
-  password-too-long: 'Password must contain no more than 256 characters.'
-  password-mismatch: 'Passwords do not match.'
-  captcha-format: 'Enter exactly five digits from the map.'
-  INVALID_REQUEST: 'The entered data is invalid. Check it and try again.'
-  EXPIRED: 'This authentication session has expired. Reconnect and try again.'
-  UNAVAILABLE: 'The authentication service is temporarily unavailable. Try again shortly.'
-  dialog-title: 'Selene authentication'
-  dialog-close: 'Continue'
+  unavailable: '<red>Сервис авторизации сейчас недоступен. Попробуйте войти позже.</red>'
+  timeout: '<red>Время на авторизацию истекло. Подключитесь ещё раз.</red>'
+  blocked: '<yellow>Сначала завершите авторизацию.</yellow>'
+  not-ready: '<yellow>Сейчас ожидается другое действие. Следуйте подсказке на экране.</yellow>'
+  usage: '<yellow>Используйте <white>/login</white> или <white>/register</white>.</yellow>'
+  CAPTCHA: '<aqua>Введите в чат пять цифр с карты.</aqua>'
+  CAPTCHA_INVALID: '<red>Код неверный.</red> <gray>Посмотрите на карту и попробуйте снова.</gray>'
+  LOGIN: '<gold>Войдите в аккаунт через <white>/login</white>.</gold>'
+  REGISTER: '<gold>Создайте пароль через <white>/register</white>.</gold>'
+  AUTHENTICATED: '<green>Авторизация завершена. Добро пожаловать!</green>'
+  INVALID_CREDENTIALS: '<red>Неверный пароль.</red>'
+  ACCOUNT_EXISTS: '<yellow>Аккаунт уже зарегистрирован. Используйте <white>/login</white>.</yellow>'
+  RATE_LIMITED: '<yellow>Слишком много попыток. Немного подождите.</yellow>'
+  BUSY: '<yellow>Запрос уже обрабатывается. Подождите.</yellow>'
+  password-too-short: '<red>Пароль должен содержать не меньше 8 символов.</red>'
+  password-too-long: '<red>Пароль должен содержать не больше 256 символов.</red>'
+  password-mismatch: '<red>Пароли не совпадают.</red>'
+  captcha-format: '<red>Введите ровно пять цифр с карты.</red>'
+  INVALID_REQUEST: '<red>Введённые данные некорректны. Проверьте их и повторите.</red>'
+  EXPIRED: '<red>Сессия авторизации истекла. Подключитесь ещё раз.</red>'
+  UNAVAILABLE: '<red>Сервис авторизации временно недоступен. Повторите чуть позже.</red>'
+  dialog-title: '<gradient:#8b5cf6:#38bdf8><bold>Selene</bold></gradient>'
+  dialog-close: '<gray>Продолжить</gray>'
