@@ -17,9 +17,11 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.plugin.messaging.PluginMessageListener;
 import javax.imageio.ImageIO;
 import java.io.*;
+import java.nio.file.*;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.logging.Level;
 
 public final class SelenePaper extends JavaPlugin implements Listener, PluginMessageListener {
  private static final String SESSION_CHANNEL="selene:session";
@@ -43,9 +45,10 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
    String pack=getConfig().getString("resource-pack-provider","NONE");
    if(!Set.of("NONE","Oraxen","ItemsAdder").contains(pack) || (!pack.equals("NONE")&&getServer().getPluginManager().getPlugin(pack)==null))throw new IllegalArgumentException("Configured external pack manager is unavailable");
    if(packetEventsEnabled)inventoryProtection=new PacketEventsInventoryProtection();
-   String file=standalone?"standalone.properties":"relay.properties"; if(!new File(getDataFolder(),file).exists())saveResource(file,false);
+   String file=standalone?"standalone.properties":"relay.properties";
+   if(!new File(getDataFolder(),file).exists()){saveResource(file,false);getLogger().warning("Created "+file+"; configure its TLS identity and trust before Selene can accept players");}
    Properties props=roleProperties(file,standalone);
-   var tls=(!standalone || required(props,"endpoint").startsWith("tls:"))?TlsContexts.load(new File(getDataFolder(),required(props,"key-store")).toPath(),required(props,"key-password-env"),new File(getDataFolder(),required(props,"trust-store")).toPath(),required(props,"trust-password-env")):null;
+   var tls=(!standalone || required(props,"endpoint").startsWith("tls:"))?tlsContext(file,props):null;
    gateway=standalone?BackendGateway.connect(required(props,"endpoint"),tls,strictBoolean(props,"allow-loopback-plaintext"),Duration.ofSeconds(5)):new RelayGateway(tls,required(props,"host"),positiveInt(props,"port"),Duration.ofSeconds(5),32);
    captcha=standalone&&strictBoolean(props,"captcha-required");
    try{Class.forName("io.papermc.paper.dialog.Dialog");dialogCapable=true;}catch(ClassNotFoundException ignored){}
@@ -54,7 +57,16 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
    for(String command:List.of("login","register","captcha")){getCommand(command).setExecutor(this);getCommand(command).setTabCompleter((s,c,a,args)->List.of());}
    // Reload is unsupported: no existing connection may inherit authentication.
    for(Player p:Bukkit.getOnlinePlayers())p.kick(net.kyori.adventure.text.Component.text(msg("unavailable")));
-  }catch(Exception | LinkageError e){getLogger().severe("Selene could not initialize securely ("+e.getClass().getSimpleName()+"). Stopping server."); Bukkit.shutdown();}
+  }catch(Exception | LinkageError e){String reason=e.getMessage()==null?e.getClass().getSimpleName():e.getMessage();getLogger().log(Level.SEVERE,"Selene could not initialize securely: "+reason+". Stopping server.",e);Bukkit.shutdown();}
+ }
+ private javax.net.ssl.SSLContext tlsContext(String file,Properties props)throws Exception{
+  Path key=new File(getDataFolder(),required(props,"key-store")).toPath();Path trust=new File(getDataFolder(),required(props,"trust-store")).toPath();
+  String keyEnv=required(props,"key-password-env"),trustEnv=required(props,"trust-password-env");List<String> missing=new ArrayList<>();
+  if(!Files.isRegularFile(key))missing.add("file "+key.toAbsolutePath());if(!Files.isRegularFile(trust))missing.add("file "+trust.toAbsolutePath());
+  if(System.getenv(keyEnv)==null||System.getenv(keyEnv).isBlank())missing.add("environment variable "+keyEnv);
+  if(System.getenv(trustEnv)==null||System.getenv(trustEnv).isBlank())missing.add("environment variable "+trustEnv);
+  if(!missing.isEmpty())throw new IllegalStateException("TLS setup in plugins/Selene/"+file+" is incomplete; missing "+String.join(", ",missing));
+  return TlsContexts.load(key,keyEnv,trust,trustEnv);
  }
  private Properties roleProperties(String file,boolean standalone)throws IOException{
   Properties props=new Properties();try(var in=new FileInputStream(new File(getDataFolder(),file))){props.load(in);}
