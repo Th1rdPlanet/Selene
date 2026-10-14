@@ -63,7 +63,6 @@ class VelocityConfigTest {
             suspicious-ip-usernames=4
             normal-captcha=false
             fork-enabled=false
-            medium-before-login=false
             premium-lookup-enabled=true
             premium-lookup-timeout-millis=2000
             premium-lookup-cache-capacity=10000

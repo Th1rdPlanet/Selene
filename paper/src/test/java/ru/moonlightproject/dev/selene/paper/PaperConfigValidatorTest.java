@@ -26,6 +26,8 @@ class PaperConfigValidatorTest {
   assertTrue(assertThrows(IllegalArgumentException.class,()->PaperConfigValidator.validate(bounds)).getMessage().contains("timeout-seconds"));
   Map<String,Object> animation=valid();animation.put("presentation.title.fade-in-millis",-1);
   assertTrue(assertThrows(IllegalArgumentException.class,()->PaperConfigValidator.validate(animation)).getMessage().contains("fade-in-millis"));
+  Map<String,Object> dialog=valid();dialog.put("dialogs.register.confirmation.max-length",1024);
+  assertTrue(assertThrows(IllegalArgumentException.class,()->PaperConfigValidator.validate(dialog)).getMessage().contains("dialogs.register.confirmation.max-length"));
  }
  @Test void rejectsOldPresentationLayoutInsteadOfSilentlyIgnoringIt(){
   Map<String,Object> values=valid();values.put("presentation.actionbar-enabled",true);
@@ -34,5 +36,5 @@ class PaperConfigValidatorTest {
  @Test void invalidMiniMessageNamesItsConfigPath(){
   assertTrue(assertThrows(IllegalArgumentException.class,()->new AuthMessages(Map.of("messages.bad","<red>broken"))).getMessage().startsWith("Invalid MiniMessage at messages.bad:"));
  }
- private static Map<String,Object> valid(){Map<String,Object> values=new HashMap<>();values.put("role","PROXY_AUTH");values.put("packet-events-mode","AUTO");values.put("stage","AFTER_JOIN");values.put("captcha-view","MAP");values.put("dialogs",true);values.put("timeout-seconds",120);values.put("limbo.mode","MANAGED");values.put("limbo.world","selene_limbo");return values;}
+ private static Map<String,Object> valid(){Map<String,Object> values=new HashMap<>();values.put("role","PROXY_AUTH");values.put("packet-events-mode","AUTO");values.put("stage","BEFORE_JOIN");values.put("captcha-view","MAP");values.put("dialogs.enabled",true);values.put("timeout-seconds",120);values.put("limbo.mode","MANAGED");values.put("limbo.world","selene_limbo");return values;}
 }

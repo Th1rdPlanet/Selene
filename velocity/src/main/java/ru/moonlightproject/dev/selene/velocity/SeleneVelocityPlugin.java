@@ -93,10 +93,6 @@ public final class SeleneVelocityPlugin {
                 if (config.forkEnabled() && !fork.supportsEarlyAdmission()) {
                     throw new IllegalStateException("fork-enabled requires a compatible Selene fork API provider");
                 }
-                if (config.mediumBeforeLogin()) {
-                    throw new IllegalStateException(
-                        "medium-before-login is reserved until the fork handshake API is implemented");
-                }
                 SSLContext tls = TlsContexts.load(
                     config.keyStore(), config.keyStorePasswordEnv(),
                     config.trustStore(), config.trustStorePasswordEnv());
@@ -209,9 +205,8 @@ public final class SeleneVelocityPlugin {
     public void chooseInitialServer(PlayerChooseInitialServerEvent event) {
         RuntimeState state = runtime;
         if (state == null) return;
-        String destination = isAuthenticated(event.getPlayer())
-            ? destinationFor(event.getPlayer(), state.config())
-            : state.config().authServer();
+        boolean authenticated=isAuthenticated(event.getPlayer());
+        String destination = AuthenticationRoute.initial(authenticated,state.config().authServer(),destinationFor(event.getPlayer(),state.config()));
         proxy.getServer(destination).ifPresent(event::setInitialServer);
     }
 
@@ -224,7 +219,7 @@ public final class SeleneVelocityPlugin {
         }
         boolean loggedIn = isAuthenticated(event.getPlayer());
         String target = event.getOriginalServer().getServerInfo().getName();
-        if (!loggedIn && !target.equals(state.config().authServer())) {
+        if (!AuthenticationRoute.mayConnect(loggedIn,target,state.config().authServer())) {
             event.getPlayer().sendMessage(text("auth-required"));
             event.setResult(ServerPreConnectEvent.ServerResult.denied());
         }

@@ -10,4 +10,4 @@ NORMAL и LOW не ограничивают переподключения. LOW 
 
 Все `message.*` поддерживают MiniMessage. Динамические значения вставляются literal-компонентами и не могут добавить click/hover tags. Консольная команда `selene account list|info|delete|reset-password` обращается к отдельному backend RPC. Игроки к ней не допускаются. Audit-запись содержит только operation, account, status и duration.
 
-Relay использует клиентский сертификат Paper, доверенную CA и pin SHA-256 leaf-сертификата. Закройте relay-bind от внешнего доступа. `fork-enabled=true` требует реализацию `ForkCapabilities`; `medium-before-login=true` пока отвергается, поскольку fork handshake transport ещё не реализован.
+Relay использует клиентский сертификат Paper, доверенную CA и pin SHA-256 leaf-сертификата. Закройте relay-bind от внешнего доступа. `fork-enabled=true` требует реализацию `ForkCapabilities`. Неавторизованный игрок маршрутизируется только на auth-сервер с limbo; попытка подключиться к любому игровому backend отклоняется до ответа `AUTHENTICATED`.

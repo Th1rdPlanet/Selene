@@ -12,15 +12,91 @@ role: PROXY_AUTH
 # ENABLED/DISABLED: принудительно включить/выключить интеграцию.
 packet-events-mode: AUTO
 
-# Сейчас безопасно реализован AFTER_JOIN: игрок уже подключён к Paper, но полностью
-# заблокирован до входа. BEFORE_JOIN требует fork handshake API и настраивается на proxy.
-stage: AFTER_JOIN
+# BEFORE_JOIN: в связке с Velocity игрок сначала попадает в limbo auth-сервера,
+# проходит CAPTCHA/пароль и лишь затем впервые подключается к игровому серверу.
+# AFTER_JOIN: тот же защищённый limbo-flow для одиночного Paper.
+# Важно: Minecraft позволяет показать карту/диалог только после перехода клиента в PLAY,
+# поэтому BEFORE_JOIN означает «до игрового backend», а не «до протокольного Join Game».
+stage: BEFORE_JOIN
 
 # Сейчас поддерживается MAP: backend генерирует цифровую CAPTCHA, Paper показывает карту.
 captcha-view: MAP
 
-# На клиентах 1.21.8+ показывать нативные диалоги с полями ввода.
-dialogs: true
+# --- Нативные диалоги -------------------------------------------------------
+# Диалоги доступны в Paper API и клиентах 1.21.6+. CAPTCHA остаётся картой и вводится
+# в чат: Velocity пока не реализует showDialog, а dialog-пакет нельзя показать до PLAY.
+dialogs:
+  # Использовать нативные окна для ввода пароля, когда их поддерживает клиент.
+  enabled: true
+  # Если диалог недоступен, безопасно принять пароль следующим отменённым сообщением чата.
+  fallback-to-chat: true
+  # Разрешить игроку закрыть окно клавишей Escape. Команда откроет его повторно.
+  can-close-with-escape: true
+  # Ставить ли одиночную игру клиента на паузу. Для сервера обычно оставляют false.
+  pause: false
+  # Сколько секунд callback кнопки остаётся действительным после открытия окна.
+  callback-lifetime-seconds: 180
+
+  login:
+    # Заголовок внутри окна.
+    title: '<gradient:#8b5cf6:#38bdf8><bold>Вход в Selene</bold></gradient>'
+    # Заголовок окна в системном списке/навигации клиента.
+    external-title: '<white>Авторизация</white>'
+    # Описание над полем. Поддерживает MiniMessage и глифы resource pack.
+    body: '<gray>Введите пароль от аккаунта. Значение не публикуется в чат и не записывается в лог.</gray>'
+    # Максимальная ширина блока описания в пикселях.
+    body-width: 320
+    password:
+      # Подпись поля пароля.
+      label: '<white>Пароль</white>'
+      # Ширина поля в пикселях.
+      width: 300
+      # Показывать подпись над полем.
+      label-visible: true
+      # Максимальное число символов; backend дополнительно проверяет свой предел.
+      max-length: 256
+    button:
+      # Текст основной кнопки.
+      text: '<green><bold>Войти</bold></green>'
+      # Подсказка при наведении; пустая строка отключает tooltip.
+      tooltip: '<gray>Отправить пароль на сервер авторизации</gray>'
+      # Ширина кнопки в пикселях.
+      width: 150
+
+  register:
+    # Заголовок внутри окна регистрации.
+    title: '<gradient:#22c55e:#38bdf8><bold>Регистрация</bold></gradient>'
+    # Заголовок окна в системном списке/навигации клиента.
+    external-title: '<white>Новый аккаунт</white>'
+    # Описание правил регистрации.
+    body: '<gray>Придумайте пароль длиной от 8 до 256 символов и повторите его.</gray>'
+    # Максимальная ширина блока описания в пикселях.
+    body-width: 320
+    password:
+      # Подпись первого поля.
+      label: '<white>Пароль</white>'
+      # Ширина первого поля в пикселях.
+      width: 300
+      # Показывать подпись первого поля.
+      label-visible: true
+      # Максимальное число символов первого поля.
+      max-length: 256
+    confirmation:
+      # Подпись поля подтверждения.
+      label: '<white>Повторите пароль</white>'
+      # Ширина поля подтверждения в пикселях.
+      width: 300
+      # Показывать подпись поля подтверждения.
+      label-visible: true
+      # Максимальное число символов подтверждения.
+      max-length: 256
+    button:
+      # Текст кнопки регистрации.
+      text: '<green><bold>Создать аккаунт</bold></green>'
+      # Подсказка при наведении; пустая строка отключает tooltip.
+      tooltip: '<gray>Проверить пароли и создать аккаунт</gray>'
+      # Ширина кнопки в пикселях.
+      width: 180
 
 # Безопасный fallback использует отменённое сообщение чата. Аргументы команд
 # отключены по умолчанию: посторонний плагин может увидеть command packet раньше Selene.
@@ -154,6 +230,7 @@ messages:
   chat-login-prompt: '<gold>Введите пароль следующим сообщением в чат.</gold> <gray>Сообщение не будет опубликовано.</gray>'
   chat-register-prompt: '<gold>Придумайте пароль и отправьте его следующим сообщением в чат.</gold> <gray>Минимум 8 символов.</gray>'
   chat-confirm-prompt: '<gold>Повторите пароль ещё одним сообщением.</gold>'
+  dialog-required: '<red>Ваш клиент не поддерживает настроенный диалог, а fallback в чат отключён.</red>'
   usage: '<yellow>Используйте <white>/login</white> или <white>/register</white> без аргументов.</yellow>'
   CAPTCHA: '<aqua>Введите в чат пять цифр с карты.</aqua>'
   CAPTCHA_INVALID: '<red>Код неверный.</red> <gray>Посмотрите на карту и попробуйте снова.</gray>'
@@ -171,11 +248,6 @@ messages:
   INVALID_REQUEST: '<red>Введённые данные некорректны. Проверьте их и повторите.</red>'
   EXPIRED: '<red>Сессия авторизации истекла. Подключитесь ещё раз.</red>'
   UNAVAILABLE: '<red>Сервис авторизации временно недоступен. Повторите чуть позже.</red>'
-  dialog-title: '<gradient:#8b5cf6:#38bdf8><bold>Selene</bold></gradient>'
-  dialog-body: '<gray>Данные отправляются только серверу авторизации и не публикуются в чат.</gray>'
-  dialog-password-label: '<white>Пароль</white>'
-  dialog-confirm-label: '<white>Повторите пароль</white>'
-  dialog-submit: '<green>Продолжить</green>'
   admin-console-only: '<red>Управление аккаунтами доступно только из консоли.</red>'
   admin-use-velocity: '<yellow>В режиме PROXY_AUTH выполните эту команду в консоли Velocity.</yellow>'
   admin-help: '<gray>Команды:</gray> <white>selene account list [page]</white><newline><white>selene account info <name></white><newline><white>selene account delete <name></white><newline><white>selene account reset-password <name></white>'

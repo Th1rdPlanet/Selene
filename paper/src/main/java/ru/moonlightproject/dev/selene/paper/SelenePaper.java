@@ -49,12 +49,18 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
     List<String> lines=getConfig().getStringList("presentation.scoreboard.states."+state+".lines");if(lines.isEmpty())throw new IllegalArgumentException("Scoreboard lines must not be empty: presentation.scoreboard.states."+state+".lines");
     for(int i=0;i<lines.size();i++)templates.put("presentation.scoreboard.states."+state+".lines."+i,lines.get(i));
    }
+   for(String screen:List.of("login","register")){
+    for(String field:List.of("title","external-title","body","button.text","button.tooltip")){String path="dialogs."+screen+"."+field,value=getConfig().getString(path);if(value==null)throw new IllegalArgumentException("Missing dialog template: "+path);templates.put(path,value);}
+    for(String field:screen.equals("login")?List.of("password"):List.of("password","confirmation")){String path="dialogs."+screen+"."+field+".label",value=getConfig().getString(path);if(value==null)throw new IllegalArgumentException("Missing dialog template: "+path);templates.put(path,value);}
+   }
    messages=new AuthMessages(templates);
-   for(String key:List.of("unavailable","timeout","blocked","usage","CAPTCHA","CAPTCHA_INVALID","LOGIN","REGISTER","AUTHENTICATED","INVALID_CREDENTIALS","ACCOUNT_EXISTS","RATE_LIMITED","BUSY","password-too-short","password-too-long","password-mismatch","captcha-format","INVALID_REQUEST","EXPIRED","UNAVAILABLE","not-ready","secure-command-only","chat-login-prompt","chat-register-prompt","chat-confirm-prompt","dialog-title","dialog-body","dialog-password-label","dialog-confirm-label","dialog-submit","admin-console-only","admin-use-velocity","admin-help","admin-invalid-username","admin-list-header","admin-list-row","admin-list-more","admin-info","admin-status-ok","admin-status-not-found","admin-status-invalid-request","admin-status-busy","admin-status-unavailable"))messages.component("messages."+key);
+   for(String key:List.of("unavailable","timeout","blocked","usage","CAPTCHA","CAPTCHA_INVALID","LOGIN","REGISTER","AUTHENTICATED","INVALID_CREDENTIALS","ACCOUNT_EXISTS","RATE_LIMITED","BUSY","password-too-short","password-too-long","password-mismatch","captcha-format","INVALID_REQUEST","EXPIRED","UNAVAILABLE","not-ready","secure-command-only","chat-login-prompt","chat-register-prompt","chat-confirm-prompt","dialog-required","admin-console-only","admin-use-velocity","admin-help","admin-invalid-username","admin-list-header","admin-list-row","admin-list-more","admin-info","admin-status-ok","admin-status-not-found","admin-status-invalid-request","admin-status-busy","admin-status-unavailable"))messages.component("messages."+key);
    limbo=new LimboManager(this,Objects.requireNonNull(getConfig().getConfigurationSection("limbo"),"Missing configuration section: limbo"));limbo.load();
    presentation=new PlayerPresentation(this,messages,getConfig());
-   if(!"AFTER_JOIN".equals(getConfig().getString("stage")) || !"MAP".equals(getConfig().getString("captcha-view")))throw new IllegalArgumentException("Only AFTER_JOIN with MAP captcha is implemented");
    String role=getConfig().getString("role",""); if(!Set.of("STANDALONE","PROXY_AUTH").contains(role))throw new IllegalArgumentException("Invalid role"); standalone=role.equals("STANDALONE");
+   String stage=getConfig().getString("stage","");if(!Set.of("AFTER_JOIN","BEFORE_JOIN").contains(stage))throw new IllegalArgumentException("stage must be AFTER_JOIN or BEFORE_JOIN");
+   if(stage.equals("BEFORE_JOIN")&&standalone)throw new IllegalArgumentException("stage BEFORE_JOIN requires role PROXY_AUTH; standalone Paper has no separate gameplay backend");
+   if(!"MAP".equals(getConfig().getString("captcha-view")))throw new IllegalArgumentException("Only MAP captcha is implemented");
    String packetMode=getConfig().getString("packet-events-mode","AUTO").toUpperCase(Locale.ROOT);
    if(!Set.of("AUTO","ENABLED","DISABLED").contains(packetMode))throw new IllegalArgumentException("packet-events-mode must be AUTO, ENABLED or DISABLED");
    packetEventsEnabled=packetMode.equals("ENABLED")||(packetMode.equals("AUTO")&&standalone);
@@ -72,13 +78,13 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
    if(standalone)getLogger().info("Selene STANDALONE backend endpoint: "+required(props,"endpoint"));
    else getLogger().info("Selene PROXY_AUTH relay endpoint: "+required(props,"host")+":"+positiveInt(props,"port")+" (must match Velocity relay-bind)");
    captcha=standalone&&strictBoolean(props,"captcha-required");
-   try{Class.forName("io.papermc.paper.dialog.Dialog");dialogCapable=true;}catch(ClassNotFoundException ignored){}
+   try{Class.forName("io.papermc.paper.dialog.Dialog");dialogCapable=getConfig().getBoolean("dialogs.enabled",true);}catch(ClassNotFoundException ignored){}
    getServer().getPluginManager().registerEvents(this,this);
    if(!standalone){getServer().getMessenger().registerIncomingPluginChannel(this,SESSION_CHANNEL,this);getServer().getMessenger().registerOutgoingPluginChannel(this,SESSION_CHANNEL);}
    for(String command:List.of("login","register")){getCommand(command).setExecutor(this);getCommand(command).setTabCompleter((s,c,a,args)->List.of());}
    getCommand("selene").setExecutor(new AccountAdminCommand(this,standalone,adminGateway,messages));getCommand("selene").setTabCompleter((s,c,a,args)->List.of());
    presentationTask=Bukkit.getScheduler().scheduleSyncRepeatingTask(this,()->{long now=System.currentTimeMillis();for(Session session:sessions.values())if(current(session)&&session.auth.view().stage()!=AuthStage.AUTHENTICATED)presentation.render(session.player,session.snapshot,session.auth.view(),now);},20,20);
-   getLogger().info("Ready: role="+role+", limbo="+getConfig().getString("limbo.world")+", dialogs="+getConfig().getBoolean("dialogs")+", packetEvents="+packetEventsEnabled);
+   getLogger().info("Ready: role="+role+", stage="+stage+", limbo="+getConfig().getString("limbo.world")+", dialogs="+dialogCapable+", packetEvents="+packetEventsEnabled);
    // Reload is unsupported: no existing connection may inherit authentication.
    for(Player p:Bukkit.getOnlinePlayers())p.kick(msg("unavailable"));
   }catch(Exception | LinkageError e){String reason=e.getMessage()==null?e.getClass().getSimpleName():e.getMessage();getLogger().severe("Startup failed: "+reason+". Check plugins/Selene configuration; the server will stop.");getLogger().log(Level.FINE,"Selene startup failure details",e);Bukkit.shutdown();}
@@ -198,11 +204,12 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void held(PlayerItemHeldEvent e){if(locked(e.getPlayer()))e.setCancelled(true);}
  private void openCredentialInput(Session s,String kind){
   if(!current(s))return;boolean registration=kind.equals("REGISTER");AuthStage expected=registration?AuthStage.WAITING_FOR_REGISTRATION:AuthStage.WAITING_FOR_LOGIN;if(s.auth.view().stage()!=expected){s.player.sendMessage(msg("not-ready"));return;}
-  if(dialogCapable&&getConfig().getBoolean("dialogs"))try{
-   if(registration)AuthDialogs.registration(s.player,messages,(password,confirmation)->Bukkit.getScheduler().runTask(this,()->submitRegistration(s,password,confirmation)));
-   else AuthDialogs.login(s.player,messages,password->Bukkit.getScheduler().runTask(this,()->submitLogin(s,password)));
+  if(dialogCapable)try{
+   if(registration)AuthDialogs.registration(s.player,messages,getConfig(),(password,confirmation)->Bukkit.getScheduler().runTask(this,()->submitRegistration(s,password,confirmation)));
+   else AuthDialogs.login(s.player,messages,getConfig(),password->Bukkit.getScheduler().runTask(this,()->submitLogin(s,password)));
    return;
   }catch(LinkageError|RuntimeException error){getLogger().fine("Native authentication dialog unavailable for "+s.player.getName()+": "+error.getClass().getSimpleName());}
+  if(!getConfig().getBoolean("dialogs.fallback-to-chat",true)){s.player.sendMessage(msg("dialog-required"));return;}
   if(registration){secureInput.beginRegistration(s.player.getUniqueId(),s.auth);s.player.sendMessage(msg("chat-register-prompt"));}
   else{secureInput.beginLogin(s.player.getUniqueId(),s.auth);s.player.sendMessage(msg("chat-login-prompt"));}
  }
