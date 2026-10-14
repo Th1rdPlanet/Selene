@@ -16,7 +16,7 @@ Artifacts are `paper/build/libs/paper-0.1.0-dev.jar`, `velocity/build/libs/veloc
 
 ## Deployment layouts
 
-Standalone Paper connects directly to the Rust backend and requires PacketEvents 2.9.5 to protect the real inventory before authentication. In a Velocity network, only Velocity connects to Rust. The Paper adapter on the separate authentication server talks only to Velocity through the Selene mTLS relay and does not require PacketEvents.
+Standalone Paper connects directly to the Rust backend and uses PacketEvents when `packet-events-mode` resolves to `ENABLED`, so the real inventory never reaches an unauthenticated client. PacketEvents is optional on a dedicated `PROXY_AUTH` server and `AUTO` leaves it disabled there because that server has an isolated empty inventory. In a Velocity network, only Velocity connects to Rust; Paper talks only to Velocity through the Selene mTLS relay.
 
 Each process owns its private key. Copy only certificates or CA material required to establish trust; never copy a node's private key to another node. See [certificate setup](docs/certificates.md), [Paper adapter](docs/paper.md), [Velocity adapter](docs/velocity.md), and [backend](backend/README.md).
 

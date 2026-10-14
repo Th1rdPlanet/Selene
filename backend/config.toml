@@ -16,6 +16,11 @@ client_ca = "backend/tls/frontend-ca.pem"
 # true допустимо только для локального loopback smoke-test без TLS.
 development_plaintext = false
 
+# Отдельный лимит административного RPC. Он не отнимает permits у игрового входа.
+admin_concurrency = 4
+# Максимальный размер страницы `selene account list`; допустимо 1..50.
+admin_page_size = 50
+
 [policy]
 # Максимум активных сессий и время жизни незавершённого входа.
 session_capacity = 10000
