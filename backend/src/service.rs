@@ -69,6 +69,13 @@ fn now() -> i64 {
         .as_secs() as i64
 }
 impl Service {
+    #[cfg(test)]
+    pub(crate) fn storage(&self) -> &Storage {
+        &self.storage
+    }
+    pub fn storage_clone(&self) -> Storage {
+        self.storage.clone()
+    }
     pub async fn new(url: &str, policy: Policy) -> anyhow::Result<Self> {
         anyhow::ensure!(
             policy.session_capacity > 0
@@ -276,7 +283,10 @@ impl Service {
         }
         if matches!(r.op.as_str(), "begin" | "answer") {
             return Reply::status(
-                if account.is_some() {
+                if account
+                    .as_ref()
+                    .is_some_and(|account| !account.hash.is_empty())
+                {
                     "LOGIN"
                 } else {
                     "REGISTER"
@@ -287,7 +297,13 @@ impl Service {
         if !(8..=256).contains(&r.password.len()) {
             return Reply::status("INVALID_REQUEST", &id);
         }
-        if r.op == "register" && account.is_some() {
+        let reset_account = account
+            .as_ref()
+            .is_some_and(|account| account.hash.is_empty());
+        if r.op == "login" && reset_account {
+            return Reply::status("INVALID_REQUEST", &id);
+        }
+        if r.op == "register" && account.is_some() && !reset_account {
             return Reply::status("ACCOUNT_EXISTS", &id);
         }
         s.attempts += 1;
@@ -323,7 +339,12 @@ impl Service {
         match result {
             Ok(Ok(hash)) => {
                 if let Some(hash) = hash {
-                    match self.storage.register(&s.name, &hash, false).await {
+                    let stored = if reset_account {
+                        self.storage.register_reset(&s.name, &hash).await
+                    } else {
+                        self.storage.register(&s.name, &hash, false).await
+                    };
+                    match stored {
                         Ok(true) => {}
                         Ok(false) => return Reply::status("ACCOUNT_EXISTS", &id),
                         Err(_) => return Reply::status("UNAVAILABLE", &id),

@@ -1,7 +1,8 @@
 use anyhow::Context;
 use moonlight_bridge_server::{Router, Server, ServerLimits};
 use selene_backend::{
-    Reply, Request,
+    AdminReply, AdminRequest, Reply, Request,
+    admin::AdminService,
     service::{Policy, Service},
 };
 use serde::Deserialize;
@@ -18,6 +19,16 @@ struct Config {
     development_plaintext: bool,
     #[serde(default)]
     policy: Policy,
+    #[serde(default = "default_admin_concurrency")]
+    admin_concurrency: usize,
+    #[serde(default = "default_admin_page_size")]
+    admin_page_size: u32,
+}
+fn default_admin_concurrency() -> usize {
+    4
+}
+fn default_admin_page_size() -> u32 {
+    50
 }
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -61,7 +72,16 @@ async fn main() -> anyhow::Result<()> {
             config.database_url_env
         )
     })?);
+    anyhow::ensure!(
+        config.admin_concurrency > 0 && (1..=50).contains(&config.admin_page_size),
+        "admin_concurrency must be positive and admin_page_size must be 1..=50"
+    );
+    let admin = Arc::new(AdminService::new(
+        service.storage_clone(),
+        config.admin_page_size,
+    ));
     let requests = Arc::new(tokio::sync::Semaphore::new(32));
+    let admin_requests = Arc::new(tokio::sync::Semaphore::new(config.admin_concurrency));
     let router = Router::builder()
         .route(1397046273, move |body| {
             let service = service.clone();
@@ -83,6 +103,32 @@ async fn main() -> anyhow::Result<()> {
                 } else {
                     serde_json::to_vec(&Reply::status("UNAVAILABLE", &reply.session)).unwrap()
                 })
+            }
+        })
+        .route(1397046274, move |body| {
+            let admin = admin.clone();
+            let requests = admin_requests.clone();
+            async move {
+                let reply = if body.len() > 65536 {
+                    AdminReply {
+                        status: "INVALID_REQUEST".into(),
+                        ..Default::default()
+                    }
+                } else if let Ok(_permit) = requests.try_acquire_owned() {
+                    match serde_json::from_slice::<AdminRequest>(&body) {
+                        Ok(request) => admin.handle(request).await,
+                        Err(_) => AdminReply {
+                            status: "INVALID_REQUEST".into(),
+                            ..Default::default()
+                        },
+                    }
+                } else {
+                    AdminReply {
+                        status: "BUSY".into(),
+                        ..Default::default()
+                    }
+                };
+                Ok(serde_json::to_vec(&reply).expect("serializable admin reply"))
             }
         })
         .build();

@@ -27,6 +27,16 @@ public final class JsonCodec {
       throw new IllegalArgumentException("Invalid retryAfter");
     return GSON.fromJson(o, AuthReply.class);
   }
+  public static AdminRequest adminRequest(byte[] bytes){
+    var o=parse(bytes);for(String k:new String[]{"op","username"})type(o,k,false);number(o,"page");number(o,"pageSize");return GSON.fromJson(o,AdminRequest.class);
+  }
+  public static AdminReply adminReply(byte[] bytes){
+    var o=parse(bytes);type(o,"status",false);number(o,"page");type(o,"hasMore",true);
+    if(o.has("accounts")&&!o.get("accounts").isJsonArray())throw new IllegalArgumentException("Invalid field accounts");
+    if(o.has("account")&&!o.get("account").isJsonNull()&&!o.get("account").isJsonObject())throw new IllegalArgumentException("Invalid field account");
+    return GSON.fromJson(o,AdminReply.class);
+  }
+  private static void number(JsonObject o,String key){if(o.has(key)&&(!o.get(key).isJsonPrimitive()||!o.getAsJsonPrimitive(key).isNumber()||!o.get(key).getAsString().matches("[0-9]+")))throw new IllegalArgumentException("Invalid field "+key);}
   private static void type(JsonObject o, String k, boolean bool) {
     if (!o.has(k) || o.get(k).isJsonNull())
       return;

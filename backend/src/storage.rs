@@ -1,6 +1,7 @@
 use anyhow::Context;
 use sqlx::{AnyPool, Row, any::AnyPoolOptions};
 use std::collections::BTreeMap;
+#[derive(Clone)]
 pub struct Storage {
     pool: AnyPool,
     postgres: bool,
@@ -90,6 +91,73 @@ impl Storage {
             }
         }
         Ok((green, premium))
+    }
+    pub async fn admin_account(&self, name: &str) -> anyhow::Result<Option<crate::AdminAccount>> {
+        let row=sqlx::query(&self.sql("SELECT name,password_hash,premium,trusted_ip,trusted_until FROM selene_accounts WHERE name = ?")).bind(name.to_ascii_lowercase()).fetch_optional(&self.pool).await?;
+        Ok(row.map(|r| {
+            crate::admin::account(
+                r.get("name"),
+                r.get::<i32, _>("premium") != 0,
+                r.get("trusted_ip"),
+                r.get("trusted_until"),
+                r.get("password_hash"),
+            )
+        }))
+    }
+    pub async fn admin_list(
+        &self,
+        page: u32,
+        page_size: u32,
+    ) -> anyhow::Result<(Vec<crate::AdminAccount>, bool)> {
+        let limit = page_size.min(50) as i64;
+        let offset = (page.saturating_sub(1) as i64).saturating_mul(limit);
+        let rows=sqlx::query(&self.sql("SELECT name,password_hash,premium,trusted_ip,trusted_until FROM selene_accounts ORDER BY name ASC LIMIT ? OFFSET ?")).bind(limit+1).bind(offset).fetch_all(&self.pool).await?;
+        let has_more = rows.len() > limit as usize;
+        let accounts = rows
+            .into_iter()
+            .take(limit as usize)
+            .map(|r| {
+                crate::admin::account(
+                    r.get("name"),
+                    r.get::<i32, _>("premium") != 0,
+                    r.get("trusted_ip"),
+                    r.get("trusted_until"),
+                    r.get("password_hash"),
+                )
+            })
+            .collect();
+        Ok((accounts, has_more))
+    }
+    pub async fn admin_delete(&self, name: &str) -> anyhow::Result<bool> {
+        Ok(
+            sqlx::query(&self.sql("DELETE FROM selene_accounts WHERE name = ?"))
+                .bind(name.to_ascii_lowercase())
+                .execute(&self.pool)
+                .await?
+                .rows_affected()
+                > 0,
+        )
+    }
+    pub async fn admin_reset_password(&self, name: &str) -> anyhow::Result<bool> {
+        Ok(
+            sqlx::query(&self.sql("UPDATE selene_accounts SET password_hash = '' WHERE name = ?"))
+                .bind(name.to_ascii_lowercase())
+                .execute(&self.pool)
+                .await?
+                .rows_affected()
+                > 0,
+        )
+    }
+    pub async fn register_reset(&self, name: &str, hash: &str) -> anyhow::Result<bool> {
+        Ok(sqlx::query(&self.sql(
+            "UPDATE selene_accounts SET password_hash = ? WHERE name = ? AND password_hash = ''",
+        ))
+        .bind(hash)
+        .bind(name.to_ascii_lowercase())
+        .execute(&self.pool)
+        .await?
+        .rows_affected()
+            == 1)
     }
 }
 

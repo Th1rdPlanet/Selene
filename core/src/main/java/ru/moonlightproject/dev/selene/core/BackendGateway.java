@@ -9,15 +9,18 @@ import java.util.concurrent.Semaphore;
 import javax.net.ssl.SSLContext;
 import ru.moonlightproject.bridge.client.MoonLightChannel;
 import ru.moonlightproject.bridge.client.MoonLightClient;
-public final class BackendGateway implements AuthGateway {
+public final class BackendGateway implements AuthGateway, AccountAdminGateway {
   public static final int METHOD_ID = 1397046273;
+  public static final int ADMIN_METHOD_ID = 1397046274;
   private final MoonLightChannel client;
   private final Semaphore permits;
+  private final Semaphore adminPermits;
   private final Duration timeout;
   public BackendGateway(MoonLightChannel client, Duration timeout, int concurrency) {
     if (concurrency < 1 || timeout.isZero() || timeout.isNegative())
       throw new IllegalArgumentException("Invalid backend bounds");
     permits = new Semaphore(concurrency);
+    adminPermits = new Semaphore(Math.max(1,Math.min(8,concurrency)));
     this.client = client;
     this.timeout = timeout;
   }
@@ -57,6 +60,11 @@ public final class BackendGateway implements AuthGateway {
       permits.release();
       return CompletableFuture.failedFuture(e);
     }
+  }
+  public CompletableFuture<AdminReply> admin(AdminRequest request){
+    if(!adminPermits.tryAcquire())return CompletableFuture.failedFuture(new RejectedExecutionException("Backend admin busy"));
+    try{return client.request(ADMIN_METHOD_ID,JsonCodec.encode(request),timeout).whenComplete((reply,error)->adminPermits.release()).thenApply(JsonCodec::adminReply);}
+    catch(RuntimeException error){adminPermits.release();return CompletableFuture.failedFuture(error);}
   }
   public void close() {
     try {
