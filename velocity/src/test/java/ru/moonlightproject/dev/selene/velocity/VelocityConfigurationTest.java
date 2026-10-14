@@ -14,7 +14,20 @@ class VelocityConfigurationTest {
   assertEquals("survival",result.config().defaultServer());
   assertFalse(result.config().premiumLookupEnabled());
   assertTrue(Files.exists(directory.resolve("velocity.properties.legacy.bak")));
+  assertTrue(Files.readString(directory.resolve("attack.yml")).contains("profiles:"));
   assertEquals(result.config(),VelocityConfiguration.load(directory).config());
+ }
+ @Test void appendsNewDocumentedSettingsWithoutReplacingExistingValues() throws Exception {
+  String old=new String(getClass().getResourceAsStream("/velocity.properties").readAllBytes(),java.nio.charset.StandardCharsets.UTF_8)
+   .replace("replace-with-64-character-lowercase-sha256","a".repeat(64));
+  Files.writeString(directory.resolve("velocity.properties"),old);
+  VelocityConfiguration.load(directory);
+  Files.writeString(directory.resolve("attack.yml"),"attack-level: LOW\n");
+  var result=VelocityConfiguration.load(directory);
+  assertEquals(ru.moonlightproject.dev.selene.core.AttackLevel.LOW,result.config().attackLevel());
+  String updated=Files.readString(directory.resolve("attack.yml"));
+  assertTrue(updated.contains("profiles:"));
+  assertTrue(updated.contains("attack-level: LOW"));
  }
  @Test void rejectsMisplacedAndDuplicateYamlSettings() throws Exception {
   Files.writeString(directory.resolve("config.yml"),"role: PROXY_AUTH\n");
