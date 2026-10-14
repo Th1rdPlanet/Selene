@@ -40,7 +40,7 @@ final class AuthDialogs {
   var options=ClickCallback.Options.builder().uses(1).lifetime(Duration.ofSeconds(config.getLong("dialogs.callback-lifetime-seconds",180))).build();
   var buttonBuilder=ActionButton.builder(messages.component(path+".button.text")).width(config.getInt(path+".button.width",150))
    .action(DialogAction.customClick((view,audience)->{if(audience==player)submit.accept(view.getText("answer"));},options));
-  String tooltip=config.getString(path+".button.tooltip","");if(!tooltip.isEmpty())buttonBuilder.tooltip(messages.component(path+".button.tooltip"));
+  String tooltip=messages.template(path+".button.tooltip");if(!tooltip.isEmpty())buttonBuilder.tooltip(messages.component(path+".button.tooltip"));
   var base=DialogBase.builder(messages.component(path+".title")).externalTitle(messages.component(path+".external-title"))
    .canCloseWithEscape(config.getBoolean("dialogs.can-close-with-escape",true)).pause(config.getBoolean("dialogs.pause",false)).afterAction(DialogBase.DialogAfterAction.CLOSE)
    .body(List.of(DialogBody.plainMessage(body,config.getInt(path+".body-width",320)))).inputs(List.of(answer)).build();
@@ -56,7 +56,7 @@ final class AuthDialogs {
   String path="dialogs."+screen;
   var options=ClickCallback.Options.builder().uses(1).lifetime(Duration.ofSeconds(config.getLong("dialogs.callback-lifetime-seconds",180))).build();
   var buttonBuilder=ActionButton.builder(messages.component(path+".button.text")).width(config.getInt(path+".button.width",150)).action(DialogAction.customClick(callback,options));
-  String tooltip=config.getString(path+".button.tooltip","");if(!tooltip.isEmpty())buttonBuilder.tooltip(messages.component(path+".button.tooltip"));var button=buttonBuilder.build();
+  String tooltip=messages.template(path+".button.tooltip");if(!tooltip.isEmpty())buttonBuilder.tooltip(messages.component(path+".button.tooltip"));var button=buttonBuilder.build();
   var base=DialogBase.builder(messages.component(path+".title")).externalTitle(messages.component(path+".external-title")).canCloseWithEscape(config.getBoolean("dialogs.can-close-with-escape",true)).pause(config.getBoolean("dialogs.pause",false)).afterAction(DialogBase.DialogAfterAction.CLOSE)
    .body(List.of(DialogBody.plainMessage(messages.component(path+".body"),config.getInt(path+".body-width",300)))).inputs(inputs).build();
   return Dialog.create(factory->factory.empty().base(base).type(DialogType.notice(button)));

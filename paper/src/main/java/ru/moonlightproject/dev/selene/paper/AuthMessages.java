@@ -8,6 +8,18 @@ import net.kyori.adventure.text.minimessage.tag.resolver.TagResolver;
 import java.util.Map;
 
 final class AuthMessages {
+ private ru.moonlightproject.dev.selene.core.LanguageCatalog catalog;
+ private Map<String,AuthMessages> localized=Map.of();
+ AuthMessages(ru.moonlightproject.dev.selene.core.LanguageCatalog catalog){
+  this(catalog.templates(catalog.defaultLocale()));
+  this.catalog=catalog;
+  var views=new java.util.HashMap<String,AuthMessages>();
+  for(String locale:catalog.locales())views.put(locale,new AuthMessages(catalog.templates(locale)));
+  localized=Map.copyOf(views);
+ }
+ AuthMessages forLocale(String locale){return catalog==null?this:localized.get(catalog.localeKey(locale));}
+ int lineCount(String path){int count=0;while(templates.containsKey(path+"."+count))count++;return count;}
+ String template(String path){return templates.getOrDefault(path,"");}
  private final Map<String,String> templates;
  private final MiniMessage miniMessage=MiniMessage.builder().strict(true).build();
 
@@ -25,6 +37,7 @@ final class AuthMessages {
   return miniMessage.deserialize(template,resolvers);
  }
 
+ String plain(String key,TagResolver... resolvers){return net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText().serialize(component(key,resolvers));}
  static TagResolver literal(String key,String value){return Placeholder.component(key,Component.text(value));}
  static TagResolver player(String value){return literal("player",value);}
  static TagResolver account(String value){return literal("account",value);}

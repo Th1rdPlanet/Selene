@@ -7,6 +7,6 @@ interface InventoryProtection {
     Object open(Player player);
     void authenticate(Object connection);
     void close(Object connection);
-    void sendVirtualOffhand(Object connection, ItemStack item);
+    void sendVirtualMainHand(Object connection, ItemStack item, int heldSlot);
     void shutdown();
 }

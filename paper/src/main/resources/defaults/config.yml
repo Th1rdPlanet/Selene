@@ -1,0 +1,26 @@
+# Selene / Paper — config.yml
+# Тексты интерфейса: languages/<язык>.json. Поддерживается MiniMessage.
+
+# Selene / Paper
+# Этот файл содержит только поведение данного Paper-сервера.
+# Настройки backend, режимов атаки и маршрутизации находятся на Velocity.
+# PROXY_AUTH — выделенный auth-сервер за Velocity. Используется relay.properties;
+# к Rust backend обращается только Velocity.
+# STANDALONE — одиночный Paper без proxy. Используется standalone.properties.
+role: "PROXY_AUTH"
+# BEFORE_JOIN: в связке с Velocity игрок сначала попадает в limbo auth-сервера,
+# проходит CAPTCHA/пароль и лишь затем впервые подключается к игровому серверу.
+# AFTER_JOIN: тот же защищённый limbo-flow для одиночного Paper.
+# Важно: Minecraft позволяет показать карту/диалог только после перехода клиента в PLAY,
+# поэтому BEFORE_JOIN означает «до игрового backend», а не «до протокольного Join Game».
+stage: "BEFORE_JOIN"
+# Язык сообщений игрокам и консоли. Словари находятся в languages/.
+language:
+  # Язык по умолчанию и язык консоли: ru или en. Можно добавить свой JSON-словарь.
+  default: "ru"
+  # Подбирать язык по настройкам клиента. До получения локали используется язык по умолчанию.
+  auto-detect: true
+# Оформление консоли.
+console:
+  # Показывать компактный логотип и сведения о сборке при запуске.
+  banner: true

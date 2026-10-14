@@ -33,9 +33,9 @@ final class PacketEventsInventoryProtection implements InventoryProtection {
         firewall.gate.close((User) connection);
     }
 
-    @Override public void sendVirtualOffhand(Object connection, ItemStack item) {
+    @Override public void sendVirtualMainHand(Object connection, ItemStack item, int heldSlot) {
         ((User) connection).sendPacketSilently(
-            new WrapperPlayServerSetSlot(0, 0, 45, SpigotConversionUtil.fromBukkitItemStack(item)));
+            new WrapperPlayServerSetSlot(0, 0, 36 + heldSlot, SpigotConversionUtil.fromBukkitItemStack(item)));
     }
 
     @Override public void shutdown() {

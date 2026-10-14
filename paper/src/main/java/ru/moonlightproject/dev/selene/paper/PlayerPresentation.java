@@ -23,7 +23,7 @@ final class PlayerPresentation {
   PresentationSnapshot snapshot=new PresentationSnapshot(player.getLocation().clone(),player.getScoreboard(),player.getExp(),player.getLevel(),player.getTotalExperience(),effects);
   applyEffect(player,snapshot,PotionEffectType.BLINDNESS,"effects.blindness");applyEffect(player,snapshot,PotionEffectType.DARKNESS,"effects.darkness");
   if(config.getBoolean("presentation.scoreboard.enabled",true)){
-   Scoreboard board=Bukkit.getScoreboardManager().getNewScoreboard();Objective objective=board.registerNewObjective("selene","dummy",messages.component("presentation.scoreboard.states.connecting.title"));objective.setDisplaySlot(DisplaySlot.SIDEBAR);
+   Scoreboard board=Bukkit.getScoreboardManager().getNewScoreboard();Objective objective=board.registerNewObjective("selene","dummy",messages.forLocale(player.getLocale()).component("presentation.scoreboard.states.connecting.title"));objective.setDisplaySlot(DisplaySlot.SIDEBAR);
    snapshot.ownedScoreboard=board;player.setScoreboard(board);
   }
   return snapshot;
@@ -32,10 +32,10 @@ final class PlayerPresentation {
  void render(Player player,PresentationSnapshot snapshot,AuthViewState state,long nowMillis){
   long seconds=Countdown.secondsRemaining(nowMillis,state.deadlineMillis());
   String screen=PresentationState.key(state);var time=AuthMessages.seconds(seconds);
-  if(config.getBoolean("presentation.title.enabled",true))player.showTitle(Title.title(messages.component("presentation.title.states."+screen+".title",time),messages.component("presentation.title.states."+screen+".subtitle",time),Title.Times.times(Duration.ofMillis(config.getLong("presentation.title.fade-in-millis",0)),Duration.ofMillis(config.getLong("presentation.title.stay-millis",1200)),Duration.ofMillis(config.getLong("presentation.title.fade-out-millis",200)))));
-  if(config.getBoolean("presentation.actionbar.enabled",true))player.sendActionBar(messages.component("presentation.actionbar.states."+screen,time));
+  if(config.getBoolean("presentation.title.enabled",true))player.showTitle(Title.title(messages.forLocale(player.getLocale()).component("presentation.title.states."+screen+".title",time),messages.forLocale(player.getLocale()).component("presentation.title.states."+screen+".subtitle",time),Title.Times.times(Duration.ofMillis(config.getLong("presentation.title.fade-in-millis",0)),Duration.ofMillis(config.getLong("presentation.title.stay-millis",1200)),Duration.ofMillis(config.getLong("presentation.title.fade-out-millis",200)))));
+  if(config.getBoolean("presentation.actionbar.enabled",true))player.sendActionBar(messages.forLocale(player.getLocale()).component("presentation.actionbar.states."+screen,time));
   if(config.getBoolean("presentation.scoreboard.enabled",true)&&snapshot.ownedScoreboard!=null){
-   Objective objective=snapshot.ownedScoreboard.getObjective("selene");if(objective!=null){objective.displayName(messages.component("presentation.scoreboard.states."+screen+".title",time));for(String entry:snapshot.ownedScoreboard.getEntries())snapshot.ownedScoreboard.resetScores(entry);List<String> lines=config.getStringList("presentation.scoreboard.states."+screen+".lines");int limit=Math.min(15,lines.size());for(int i=0;i<limit;i++){Score score=objective.getScore("§"+Integer.toHexString(i));score.customName(messages.component("presentation.scoreboard.states."+screen+".lines."+i,time));score.setScore(limit-i);}}
+   Objective objective=snapshot.ownedScoreboard.getObjective("selene");if(objective!=null){objective.displayName(messages.forLocale(player.getLocale()).component("presentation.scoreboard.states."+screen+".title",time));for(String entry:snapshot.ownedScoreboard.getEntries())snapshot.ownedScoreboard.resetScores(entry);int limit=Math.min(15,messages.forLocale(player.getLocale()).lineCount("presentation.scoreboard.states."+screen+".lines"));for(int i=0;i<limit;i++){Score score=objective.getScore("§"+Integer.toHexString(i));score.customName(messages.forLocale(player.getLocale()).component("presentation.scoreboard.states."+screen+".lines."+i,time));score.setScore(limit-i);}}
   }
   if(config.getBoolean("presentation.experience.bar-enabled",true)||config.getBoolean("presentation.experience.level-enabled",true)){
    float fraction=Countdown.fraction(nowMillis,state.deadlineMillis()-Math.max(10,config.getLong("timeout-seconds",120))*1000,state.deadlineMillis());

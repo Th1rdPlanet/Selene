@@ -26,6 +26,9 @@ captcha-view: DIALOG_FONT
 captcha:
   # Шрифт из resource pack. Готовый пакет Selene для ItemsAdder использует это имя.
   font: selene:captcha
+  # MANUAL — пакет установлен самим игроком или внешним способом; диалог открывается
+  # сразу. SERVER — менеджер паков отправляет его при входе, Selene ждёт подтверждение.
+  resource-pack-loading: MANUAL
   # Сколько ждать загрузки resource pack перед использованием резервной карты.
   pack-load-timeout-seconds: 15
   # Показать карту, если клиент отклонил pack, загрузка не удалась или диалог недоступен.
