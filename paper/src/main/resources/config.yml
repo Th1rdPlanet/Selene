@@ -19,12 +19,21 @@ packet-events-mode: AUTO
 # поэтому BEFORE_JOIN означает «до игрового backend», а не «до протокольного Join Game».
 stage: BEFORE_JOIN
 
-# Сейчас поддерживается MAP: backend генерирует цифровую CAPTCHA, Paper показывает карту.
-captcha-view: MAP
+# DIALOG_FONT показывает CAPTCHA и поле для пяти цифр в одном нативном окне.
+# MAP оставляет прежний вариант с картой и вводом в чат.
+captcha-view: DIALOG_FONT
+
+captcha:
+  # Шрифт из resource pack. Готовый пакет Selene для ItemsAdder использует это имя.
+  font: selene:captcha
+  # Сколько ждать загрузки resource pack перед использованием резервной карты.
+  pack-load-timeout-seconds: 15
+  # Показать карту, если клиент отклонил pack, загрузка не удалась или диалог недоступен.
+  fallback-to-map: true
 
 # --- Нативные диалоги -------------------------------------------------------
-# Диалоги доступны в Paper API и клиентах 1.21.6+. CAPTCHA остаётся картой и вводится
-# в чат: Velocity пока не реализует showDialog, а dialog-пакет нельзя показать до PLAY.
+# Диалоги доступны в Paper API и клиентах 1.21.6+. На auth Paper они открываются
+# после протокольного входа в limbo, но до первого подключения к игровому серверу.
 dialogs:
   # Использовать нативные окна для ввода пароля, когда их поддерживает клиент.
   enabled: true
@@ -36,6 +45,32 @@ dialogs:
   pause: false
   # Сколько секунд callback кнопки остаётся действительным после открытия окна.
   callback-lifetime-seconds: 180
+
+  captcha:
+    # Заголовок окна цифровой CAPTCHA.
+    title: '<gradient:#38bdf8:#8b5cf6><bold>Проверка безопасности</bold></gradient>'
+    # Заголовок окна в системной навигации клиента.
+    external-title: '<white>CAPTCHA</white>'
+    # Текст над строкой глифов. Сама CAPTCHA вставляется безопасным Component.
+    body-before: '<gray>Распознайте пять цифр:</gray>'
+    # Текст под строкой глифов.
+    body-after: '<dark_gray>Код содержит только цифры от 0 до 9.</dark_gray>'
+    # Ширина текстового блока диалога.
+    body-width: 320
+    answer:
+      # Подпись поля ответа.
+      label: '<white>Код</white>'
+      # Ширина поля ответа.
+      width: 220
+      # Показывать подпись поля.
+      label-visible: true
+    button:
+      # Текст кнопки проверки.
+      text: '<aqua><bold>Проверить</bold></aqua>'
+      # Подсказка кнопки.
+      tooltip: '<gray>Отправить пять цифр</gray>'
+      # Ширина кнопки.
+      width: 150
 
   login:
     # Заголовок внутри окна.
@@ -215,7 +250,7 @@ presentation:
 
 # Selene не раздаёт resource pack сам. Допустимые значения:
 # NONE, Oraxen, ItemsAdder. Выбранный плагин должен быть установлен на этом Paper.
-resource-pack-provider: NONE
+resource-pack-provider: ItemsAdder
 
 # Все сообщения Paper и весь текст диалогов поддерживают MiniMessage.
 # Можно использовать теги <color>, <bold>, <font:key> и глифы вашего Oraxen/ItemsAdder pack.
@@ -234,6 +269,8 @@ messages:
   usage: '<yellow>Используйте <white>/login</white> или <white>/register</white> без аргументов.</yellow>'
   CAPTCHA: '<aqua>Введите в чат пять цифр с карты.</aqua>'
   CAPTCHA_INVALID: '<red>Код неверный.</red> <gray>Посмотрите на карту и попробуйте снова.</gray>'
+  captcha-pack-fallback: '<yellow>Resource pack не загрузился, поэтому CAPTCHA показана на карте.</yellow>'
+  captcha-pack-required: '<red>Для прохождения CAPTCHA требуется resource pack сервера.</red>'
   LOGIN: '<gold>Войдите в аккаунт через <white>/login</white>.</gold>'
   REGISTER: '<gold>Создайте пароль через <white>/register</white>.</gold>'
   AUTHENTICATED: '<green>Авторизация завершена. Добро пожаловать!</green>'

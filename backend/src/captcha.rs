@@ -3,6 +3,7 @@ use rand::{Rng, rngs::OsRng};
 pub struct Challenge {
     pub(crate) answer: String,
     pub image: String,
+    pub glyphs: String,
 }
 pub fn generate() -> Challenge {
     let glyphs: [[&str; 7]; 10] = [
@@ -40,6 +41,15 @@ pub fn generate() -> Challenge {
     let mut rng = OsRng;
     let answer: String = (0..5)
         .map(|_| char::from(b'0' + rng.gen_range(0..10)))
+        .collect();
+    // Each decimal digit has sixteen visually different glyphs in the Selene pack.
+    // The codepoints reveal neither the answer in logs nor to ordinary fonts.
+    let captcha_glyphs: String = answer
+        .bytes()
+        .map(|digit| {
+            let variant = rng.gen_range(0..16) as u32;
+            char::from_u32(0xE000 + u32::from(digit - b'0') * 16 + variant).unwrap()
+        })
         .collect();
     let mut pixels = vec![236u8; 128 * 128 * 3];
     for (i, digit) in answer.bytes().enumerate() {
@@ -79,5 +89,6 @@ pub fn generate() -> Challenge {
     Challenge {
         answer,
         image: base64::engine::general_purpose::STANDARD.encode(output),
+        glyphs: captcha_glyphs,
     }
 }

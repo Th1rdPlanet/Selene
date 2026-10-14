@@ -26,12 +26,14 @@ import java.util.logging.Level;
 public final class SelenePaper extends JavaPlugin implements Listener, PluginMessageListener {
  private static final String SESSION_CHANNEL="selene:session";
  private final Map<UUID,Session> sessions=new ConcurrentHashMap<>();
+ private final Map<UUID,Boolean> resourcePackStatuses=new ConcurrentHashMap<>();
  private final AuthFlow flow=new AuthFlow();
  private final SecureChatInput secureInput=new SecureChatInput();
  private InventoryProtection inventoryProtection; private AuthGateway gateway; private AccountAdminGateway adminGateway; private AuthMessages messages; private LimboManager limbo; private PlayerPresentation presentation; private int presentationTask=-1; private boolean standalone,captcha,dialogCapable,packetEventsEnabled;
  private static final class Session {
   final Player player; final Object inventoryConnection; final AuthSession auth; final PresentationSnapshot snapshot;
   MapView map;
+  String captchaImage="",captchaGlyphs=""; Boolean packLoaded; int captchaDisplayGeneration;
   Session(Player p,Object connection,AuthSession auth,PresentationSnapshot snapshot){player=p;inventoryConnection=connection;this.auth=auth;this.snapshot=snapshot;}
  }
  @Override public void onEnable(){
@@ -53,21 +55,23 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
     for(String field:List.of("title","external-title","body","button.text","button.tooltip")){String path="dialogs."+screen+"."+field,value=getConfig().getString(path);if(value==null)throw new IllegalArgumentException("Missing dialog template: "+path);templates.put(path,value);}
     for(String field:screen.equals("login")?List.of("password"):List.of("password","confirmation")){String path="dialogs."+screen+"."+field+".label",value=getConfig().getString(path);if(value==null)throw new IllegalArgumentException("Missing dialog template: "+path);templates.put(path,value);}
    }
+   for(String field:List.of("title","external-title","body-before","body-after","answer.label","button.text","button.tooltip")){String path="dialogs.captcha."+field,value=getConfig().getString(path);if(value==null)throw new IllegalArgumentException("Missing dialog template: "+path);templates.put(path,value);}
    messages=new AuthMessages(templates);
-   for(String key:List.of("unavailable","timeout","blocked","usage","CAPTCHA","CAPTCHA_INVALID","LOGIN","REGISTER","AUTHENTICATED","INVALID_CREDENTIALS","ACCOUNT_EXISTS","RATE_LIMITED","BUSY","password-too-short","password-too-long","password-mismatch","captcha-format","INVALID_REQUEST","EXPIRED","UNAVAILABLE","not-ready","secure-command-only","chat-login-prompt","chat-register-prompt","chat-confirm-prompt","dialog-required","admin-console-only","admin-use-velocity","admin-help","admin-invalid-username","admin-list-header","admin-list-row","admin-list-more","admin-info","admin-status-ok","admin-status-not-found","admin-status-invalid-request","admin-status-busy","admin-status-unavailable"))messages.component("messages."+key);
+   for(String key:List.of("unavailable","timeout","blocked","usage","CAPTCHA","CAPTCHA_INVALID","captcha-pack-fallback","captcha-pack-required","LOGIN","REGISTER","AUTHENTICATED","INVALID_CREDENTIALS","ACCOUNT_EXISTS","RATE_LIMITED","BUSY","password-too-short","password-too-long","password-mismatch","captcha-format","INVALID_REQUEST","EXPIRED","UNAVAILABLE","not-ready","secure-command-only","chat-login-prompt","chat-register-prompt","chat-confirm-prompt","dialog-required","admin-console-only","admin-use-velocity","admin-help","admin-invalid-username","admin-list-header","admin-list-row","admin-list-more","admin-info","admin-status-ok","admin-status-not-found","admin-status-invalid-request","admin-status-busy","admin-status-unavailable"))messages.component("messages."+key);
    limbo=new LimboManager(this,Objects.requireNonNull(getConfig().getConfigurationSection("limbo"),"Missing configuration section: limbo"));limbo.load();
    presentation=new PlayerPresentation(this,messages,getConfig());
    String role=getConfig().getString("role",""); if(!Set.of("STANDALONE","PROXY_AUTH").contains(role))throw new IllegalArgumentException("Invalid role"); standalone=role.equals("STANDALONE");
    String stage=getConfig().getString("stage","");if(!Set.of("AFTER_JOIN","BEFORE_JOIN").contains(stage))throw new IllegalArgumentException("stage must be AFTER_JOIN or BEFORE_JOIN");
    if(stage.equals("BEFORE_JOIN")&&standalone)throw new IllegalArgumentException("stage BEFORE_JOIN requires role PROXY_AUTH; standalone Paper has no separate gameplay backend");
-   if(!"MAP".equals(getConfig().getString("captcha-view")))throw new IllegalArgumentException("Only MAP captcha is implemented");
+   String captchaView=getConfig().getString("captcha-view","").toUpperCase(Locale.ROOT);if(!Set.of("MAP","DIALOG_FONT").contains(captchaView))throw new IllegalArgumentException("captcha-view must be MAP or DIALOG_FONT");
    String packetMode=getConfig().getString("packet-events-mode","AUTO").toUpperCase(Locale.ROOT);
    if(!Set.of("AUTO","ENABLED","DISABLED").contains(packetMode))throw new IllegalArgumentException("packet-events-mode must be AUTO, ENABLED or DISABLED");
    packetEventsEnabled=packetMode.equals("ENABLED")||(packetMode.equals("AUTO")&&standalone);
    if(packetEventsEnabled&&!getServer().getPluginManager().isPluginEnabled("packetevents"))throw new IllegalStateException("PacketEvents is enabled but unavailable");
    if(standalone&&!packetEventsEnabled)getLogger().warning("PacketEvents is disabled in STANDALONE mode; the client can receive the real inventory before authentication");
    String pack=getConfig().getString("resource-pack-provider","NONE");
-   if(!Set.of("NONE","Oraxen","ItemsAdder").contains(pack) || (!pack.equals("NONE")&&getServer().getPluginManager().getPlugin(pack)==null))throw new IllegalArgumentException("Configured external pack manager is unavailable");
+   if(!Set.of("NONE","Oraxen","ItemsAdder").contains(pack) || (!pack.equals("NONE")&&!getServer().getPluginManager().isPluginEnabled(pack)))throw new IllegalArgumentException("Configured external pack manager '"+pack+"' is unavailable or failed to enable");
+   if(captchaView.equals("DIALOG_FONT")&&pack.equals("NONE"))throw new IllegalArgumentException("captcha-view DIALOG_FONT requires resource-pack-provider ItemsAdder or Oraxen");
    if(packetEventsEnabled){inventoryProtection=new PacketEventsInventoryProtection();getLogger().info("PacketEvents integration active: listener registered, role="+role+", mode="+packetMode+", version="+com.github.retrooper.packetevents.PacketEvents.getAPI().getVersion());}
    else getLogger().info("PacketEvents integration inactive: role="+role+", mode="+packetMode+" (expected for PROXY_AUTH with AUTO)");
    String file=standalone?"standalone.properties":"relay.properties";
@@ -112,7 +116,7 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
  private static int positiveInt(Properties props,String key){int value=Integer.parseInt(required(props,key));if(value<1||value>65535)throw new IllegalArgumentException("Setting must be a valid port: "+key);return value;}
  @Override public void onDisable(){
   for(Session s:sessions.values())s.player.kick(msg("unavailable"));
- sessions.clear();if(presentationTask!=-1)Bukkit.getScheduler().cancelTask(presentationTask);if(gateway!=null)gateway.close();if(inventoryProtection!=null)inventoryProtection.shutdown();
+ sessions.clear();resourcePackStatuses.clear();if(presentationTask!=-1)Bukkit.getScheduler().cancelTask(presentationTask);if(gateway!=null)gateway.close();if(inventoryProtection!=null)inventoryProtection.shutdown();
   getServer().getMessenger().unregisterIncomingPluginChannel(this,SESSION_CHANNEL,this);
   getServer().getMessenger().unregisterOutgoingPluginChannel(this,SESSION_CHANNEL);
  }
@@ -123,7 +127,7 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
   if((packetEventsEnabled&&connection==null)||gateway==null){p.kick(msg("unavailable"));return;}
   long timeoutMillis=Math.max(10,getConfig().getLong("timeout-seconds",120))*1000;
   AuthSession auth=flow.open(new ConnectionKey(p.getUniqueId(),p),System.currentTimeMillis()+timeoutMillis);
-  PresentationSnapshot snapshot=presentation.begin(p);Session s=new Session(p,connection,auth,snapshot);sessions.put(p.getUniqueId(),s);
+  PresentationSnapshot snapshot=presentation.begin(p);Session s=new Session(p,connection,auth,snapshot);s.packLoaded=resourcePackStatuses.get(p.getUniqueId());sessions.put(p.getUniqueId(),s);
   applyVisibility(s);limbo.enter(p);presentation.render(p,snapshot,auth.view(),System.currentTimeMillis());
   Bukkit.getScheduler().runTaskLater(this,()->{if(current(s)&&s.auth.view().stage()!=AuthStage.AUTHENTICATED)p.kick(msg("timeout"));},timeoutMillis/50);
   if(standalone){flow.bindToken(s.auth,UUID.randomUUID().toString());request(s,"begin","","");}
@@ -146,14 +150,39 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
     if(!flow.accept(s.auth,requestSession,reply,System.currentTimeMillis())){s.player.kick(msg("unavailable"));return;}
     switch(reply.status()){
      case "AUTHENTICATED" -> {secureInput.clear(s.player.getUniqueId());if(packetEventsEnabled)inventoryProtection.authenticate(s.inventoryConnection);presentation.restore(s.player,s.snapshot);restoreVisibility(s);releaseMap(s);s.player.updateInventory();limbo.exit(s.player,s.snapshot);s.player.sendMessage(msg("AUTHENTICATED"));}
-     case "CAPTCHA" -> {try{showMap(s,reply.image());s.player.sendMessage(msg("CAPTCHA"));}catch(Exception ex){s.player.kick(msg("unavailable"));}}
+     case "CAPTCHA" -> {s.captchaImage=reply.image();s.captchaGlyphs=reply.captchaGlyphs();showCaptcha(s);}
      case "LOGIN","REGISTER" -> {s.player.sendMessage(msg(reply.status()));openCredentialInput(s,reply.status());}
-     case "CAPTCHA_INVALID","RATE_LIMITED","BUSY" -> s.player.sendMessage(msg(reply.status()));
+     case "CAPTCHA_INVALID" -> {s.player.sendMessage(msg(reply.status()));showCaptcha(s);}
+     case "RATE_LIMITED","BUSY" -> s.player.sendMessage(msg(reply.status()));
      case "INVALID_CREDENTIALS","ACCOUNT_EXISTS" -> {s.player.sendMessage(msg(reply.status()));openCredentialInput(s,"LOGIN");}
      default -> {String key=AuthInputValidation.messageKeyForStatus(reply.status());if(key==null)s.player.kick(msg("unavailable"));else if(reply.status().equals("EXPIRED"))s.player.kick(msg(key));else s.player.sendMessage(msg(key));}
     }
    });
   });
+ }
+ private void showCaptcha(Session s){
+  if(!current(s)||s.auth.view().stage()!=AuthStage.WAITING_FOR_CAPTCHA)return;
+  int generation=++s.captchaDisplayGeneration;
+  if("DIALOG_FONT".equalsIgnoreCase(getConfig().getString("captcha-view"))&&dialogCapable&&!s.captchaGlyphs.isEmpty()){
+   awaitPackAndShowDialog(s,generation,0);return;
+  }
+  showCaptchaMap(s);
+ }
+ private void awaitPackAndShowDialog(Session s,int generation,int attempt){
+  if(!current(s)||generation!=s.captchaDisplayGeneration||s.auth.view().stage()!=AuthStage.WAITING_FOR_CAPTCHA)return;
+  if(Boolean.TRUE.equals(s.packLoaded)){
+   try{AuthDialogs.captcha(s.player,messages,getConfig(),s.captchaGlyphs,answer->Bukkit.getScheduler().runTask(this,()->submitCaptcha(s,answer)));return;}
+   catch(LinkageError|RuntimeException error){getLogger().warning("CAPTCHA dialog failed for "+s.player.getName()+": "+error.getClass().getSimpleName());}
+  }
+  int max=Math.max(1,getConfig().getInt("captcha.pack-load-timeout-seconds",15))*2;
+  if(s.packLoaded==null&&attempt<max){Bukkit.getScheduler().runTaskLater(this,()->awaitPackAndShowDialog(s,generation,attempt+1),10);return;}
+  if(getConfig().getBoolean("captcha.fallback-to-map",true)){s.player.sendMessage(msg("captcha-pack-fallback"));showCaptchaMap(s);}
+  else s.player.kick(msg("captcha-pack-required"));
+ }
+ private void showCaptchaMap(Session s){try{showMap(s,s.captchaImage);s.player.sendMessage(msg("CAPTCHA"));}catch(Exception ex){getLogger().warning("Could not render CAPTCHA for "+s.player.getName()+": "+ex.getMessage());s.player.kick(msg("unavailable"));}}
+ private void submitCaptcha(Session s,String answer){
+  AuthInputValidation.ValidationResult validation=AuthInputValidation.captcha(answer);if(!validation.valid()){s.player.sendMessage(msg(validation.messageKey()));showCaptcha(s);return;}
+  if(flow.submitCaptcha(s.auth,answer))request(s,"answer","",answer);else s.player.sendMessage(msg("not-ready"));
  }
  private void showMap(Session s,String encoded)throws IOException {
   if(encoded.length()>240000)throw new IOException("Oversized image");
@@ -186,7 +215,8 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
   if(!accepted){p.sendMessage(msg("not-ready"));return true;}
   request(s,name,args[0],"");return true;
  }
- @EventHandler public void quit(PlayerQuitEvent e){secureInput.clear(e.getPlayer().getUniqueId());Session s=sessions.get(e.getPlayer().getUniqueId());if(s!=null&&s.player==e.getPlayer()&&sessions.remove(e.getPlayer().getUniqueId(),s)){if(packetEventsEnabled)inventoryProtection.close(s.inventoryConnection);presentation.restore(s.player,s.snapshot);restoreVisibility(s);releaseMap(s);gateway.call(dto(s,"close","",""));flow.close(s.auth);}}
+ @EventHandler public void quit(PlayerQuitEvent e){secureInput.clear(e.getPlayer().getUniqueId());resourcePackStatuses.remove(e.getPlayer().getUniqueId());Session s=sessions.get(e.getPlayer().getUniqueId());if(s!=null&&s.player==e.getPlayer()&&sessions.remove(e.getPlayer().getUniqueId(),s)){if(packetEventsEnabled)inventoryProtection.close(s.inventoryConnection);presentation.restore(s.player,s.snapshot);restoreVisibility(s);releaseMap(s);gateway.call(dto(s,"close","",""));flow.close(s.auth);}}
+ @EventHandler public void resourcePackStatus(PlayerResourcePackStatusEvent e){Boolean loaded=switch(e.getStatus()){case SUCCESSFULLY_LOADED -> true;case DECLINED,FAILED_DOWNLOAD,INVALID_URL,FAILED_RELOAD,DISCARDED -> false;default -> null;};if(loaded==null)return;resourcePackStatuses.put(e.getPlayer().getUniqueId(),loaded);Session s=sessions.get(e.getPlayer().getUniqueId());if(s==null)return;s.packLoaded=loaded;if(loaded&&s.auth.view().stage()==AuthStage.WAITING_FOR_CAPTCHA)showCaptcha(s);}
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void move(PlayerMoveEvent e){Location from=e.getFrom(),to=e.getTo();if(locked(e.getPlayer())&&to!=null&&Countdown.movementChanged(from.getX(),from.getY(),from.getZ(),from.getYaw(),from.getPitch(),to.getX(),to.getY(),to.getZ(),to.getYaw(),to.getPitch()))e.setTo(from);}
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void teleport(PlayerTeleportEvent e){if(locked(e.getPlayer())&&e.getCause()!=PlayerTeleportEvent.TeleportCause.PLUGIN)e.setCancelled(true);}
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void command(PlayerCommandPreprocessEvent e){if(locked(e.getPlayer())){String c=e.getMessage().split(" ",2)[0].substring(1);if(!PacketPolicy.allowCommand(c)){e.setCancelled(true);e.getPlayer().sendMessage(msg("blocked"));}}}
@@ -217,7 +247,7 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
   if(!current(s))return;SecureChatInput.Result result=secureInput.accept(s.player.getUniqueId(),s.auth,input);
   if(!result.messageKey().isEmpty()){s.player.sendMessage(msg(result.messageKey()));return;}
   switch(result.action()){
-   case CAPTCHA -> {if(flow.submitCaptcha(s.auth,result.secret()))request(s,"answer","",result.secret());else s.player.sendMessage(msg("not-ready"));}
+   case CAPTCHA -> submitCaptcha(s,result.secret());
    case LOGIN -> submitLogin(s,result.secret());
    case AWAIT_CONFIRMATION -> s.player.sendMessage(msg("chat-confirm-prompt"));
    case REGISTER -> submitRegistration(s,result.secret(),result.confirmation());

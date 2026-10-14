@@ -243,6 +243,7 @@ impl Service {
             if r.op == "begin" {
                 return Reply {
                     image: c.image.clone(),
+                    captcha_glyphs: c.glyphs.clone(),
                     ..Reply::status("CAPTCHA", &id)
                 };
             }

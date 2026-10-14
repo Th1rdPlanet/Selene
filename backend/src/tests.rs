@@ -39,6 +39,13 @@ async fn captcha_cannot_be_bypassed_or_reset_by_begin() {
     let first = s.handle(r.clone()).await;
     assert_eq!(first.status, "CAPTCHA");
     assert!(first.image.starts_with("iVBOR"));
+    assert_eq!(first.captcha_glyphs.chars().count(), 5);
+    assert!(
+        first
+            .captcha_glyphs
+            .chars()
+            .all(|c| ('\u{e000}'..='\u{e09f}').contains(&c))
+    );
     r.op = "register".into();
     assert_eq!(s.handle(r.clone()).await.status, "INVALID_REQUEST");
     r.op = "answer".into();
@@ -48,7 +55,9 @@ async fn captcha_cannot_be_bypassed_or_reset_by_begin() {
     }
     r.op = "begin".into();
     r.captcha_required = false;
-    assert_eq!(s.handle(r.clone()).await.image, first.image);
+    let repeated = s.handle(r.clone()).await;
+    assert_eq!(repeated.image, first.image);
+    assert_eq!(repeated.captcha_glyphs, first.captcha_glyphs);
     r.op = "answer".into();
     assert_eq!(s.handle(r.clone()).await.status, "RATE_LIMITED");
     r.op = "begin".into();

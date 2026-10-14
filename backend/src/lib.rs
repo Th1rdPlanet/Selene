@@ -44,6 +44,7 @@ pub struct Reply {
     pub status: String,
     pub session: String,
     pub image: String,
+    pub captcha_glyphs: String,
     pub green: BTreeMap<String, String>,
     pub premium_names: Vec<String>,
     pub retry_after: u32,

@@ -20,7 +20,7 @@ public final class JsonCodec {
   }
   public static AuthReply reply(byte[] bytes) {
     var o = parse(bytes);
-    for (String k : new String[] {"status", "session", "image"}) type(o, k, false);
+    for (String k : new String[] {"status", "session", "image", "captchaGlyphs"}) type(o, k, false);
     if (o.has("retryAfter")
         && (!o.get("retryAfter").isJsonPrimitive() || !o.getAsJsonPrimitive("retryAfter").isNumber()
             || !o.get("retryAfter").getAsString().matches("[0-9]+")))

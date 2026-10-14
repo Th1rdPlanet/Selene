@@ -5,6 +5,8 @@ target/
 .superpowers/
 docs/superpowers/
 run/
+server/
+*.bak
 *.db
 *.db-shm
 *.db-wal

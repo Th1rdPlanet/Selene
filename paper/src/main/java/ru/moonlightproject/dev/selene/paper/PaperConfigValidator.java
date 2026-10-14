@@ -6,7 +6,7 @@ import java.util.List;
 
 final class PaperConfigValidator {
  record Settings(boolean compatibilityPasswordArguments,boolean titleEnabled){}
- private static final Set<String> ROOTS=Set.of("role","packet-events-mode","stage","captcha-view","dialogs","secure-input","timeout-seconds","effects","visibility","limbo","presentation","resource-pack-provider","messages");
+ private static final Set<String> ROOTS=Set.of("role","packet-events-mode","stage","captcha-view","captcha","dialogs","secure-input","timeout-seconds","effects","visibility","limbo","presentation","resource-pack-provider","messages");
  private PaperConfigValidator(){}
  static Settings validate(Map<String,Object> values){
   for(String path:values.keySet()){
@@ -22,6 +22,8 @@ final class PaperConfigValidator {
   bounded(values,"presentation.title.fade-in-millis",0,60000,0);bounded(values,"presentation.title.stay-millis",50,60000,1200);bounded(values,"presentation.title.fade-out-millis",0,60000,200);
   bool(values,"dialogs.enabled",true);bool(values,"dialogs.fallback-to-chat",true);bool(values,"dialogs.can-close-with-escape",true);bool(values,"dialogs.pause",false);
   bounded(values,"dialogs.callback-lifetime-seconds",1,3600,180);
+  Object captchaFont=values.get("captcha.font");if(captchaFont!=null&&(!(captchaFont instanceof String text)||text.isBlank()))throw new IllegalArgumentException("captcha.font must not be empty");bool(values,"captcha.fallback-to-map",true);bounded(values,"captcha.pack-load-timeout-seconds",1,120,15);
+  bounded(values,"dialogs.captcha.body-width",1,1024,320);bounded(values,"dialogs.captcha.answer.width",1,1024,220);bool(values,"dialogs.captcha.answer.label-visible",true);bounded(values,"dialogs.captcha.button.width",1,1024,150);
   for(String screen:List.of("login","register")){bounded(values,"dialogs."+screen+".body-width",1,1024,320);bounded(values,"dialogs."+screen+".button.width",1,1024,150);for(String field:screen.equals("login")?List.of("password"):List.of("password","confirmation")){bounded(values,"dialogs."+screen+"."+field+".width",1,1024,300);bounded(values,"dialogs."+screen+"."+field+".max-length",8,256,256);bool(values,"dialogs."+screen+"."+field+".label-visible",true);}}
   return new Settings(bool(values,"secure-input.compatibility-password-arguments",false),bool(values,"presentation.title.enabled",true));
  }

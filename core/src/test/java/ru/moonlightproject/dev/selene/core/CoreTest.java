@@ -10,6 +10,8 @@ class CoreTest {
     var r = new AuthRequest("login", "s", "Player", "127.0.0.1", "secret", "", false, true);
     assertEquals(r, JsonCodec.request(JsonCodec.encode(r)));
     assertFalse(r.toString().contains("secret"));
+    var reply = new AuthReply("CAPTCHA", "s", "png", "\ue001\ue012\ue023\ue034\ue045", java.util.Map.of(), java.util.List.of(), 0);
+    assertEquals(reply, JsonCodec.reply(JsonCodec.encode(reply)));
   }
   @Test
   void strictWireBounds() {
