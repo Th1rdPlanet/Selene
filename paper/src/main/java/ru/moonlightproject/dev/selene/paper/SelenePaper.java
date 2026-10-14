@@ -28,7 +28,7 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
  private final Map<UUID,Session> sessions=new ConcurrentHashMap<>();
  private final AuthFlow flow=new AuthFlow();
  private final SecureChatInput secureInput=new SecureChatInput();
- private InventoryProtection inventoryProtection; private AuthGateway gateway; private AuthMessages messages; private LimboManager limbo; private PlayerPresentation presentation; private int presentationTask=-1; private boolean standalone,captcha,dialogCapable,packetEventsEnabled;
+ private InventoryProtection inventoryProtection; private AuthGateway gateway; private AccountAdminGateway adminGateway; private AuthMessages messages; private LimboManager limbo; private PlayerPresentation presentation; private int presentationTask=-1; private boolean standalone,captcha,dialogCapable,packetEventsEnabled;
  private static final class Session {
   final Player player; final Object inventoryConnection; final AuthSession auth; final PresentationSnapshot snapshot;
   MapView map;
@@ -43,7 +43,7 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
    var presentationSection=getConfig().getConfigurationSection("presentation");if(presentationSection==null)throw new IllegalArgumentException("Missing configuration section: presentation");
    for(String key:List.of("title","subtitle","actionbar","scoreboard-title","scoreboard-line-1","scoreboard-line-2")){String value=presentationSection.getString(key);if(value==null)throw new IllegalArgumentException("Missing message template: presentation."+key);templates.put("presentation."+key,value);}
    messages=new AuthMessages(templates);
-   for(String key:List.of("unavailable","timeout","blocked","usage","CAPTCHA","CAPTCHA_INVALID","LOGIN","REGISTER","AUTHENTICATED","INVALID_CREDENTIALS","ACCOUNT_EXISTS","RATE_LIMITED","BUSY","password-too-short","password-too-long","password-mismatch","captcha-format","INVALID_REQUEST","EXPIRED","UNAVAILABLE","not-ready","secure-command-only","chat-login-prompt","chat-register-prompt","chat-confirm-prompt","dialog-title","dialog-body","dialog-password-label","dialog-confirm-label","dialog-submit"))messages.component("messages."+key);
+   for(String key:List.of("unavailable","timeout","blocked","usage","CAPTCHA","CAPTCHA_INVALID","LOGIN","REGISTER","AUTHENTICATED","INVALID_CREDENTIALS","ACCOUNT_EXISTS","RATE_LIMITED","BUSY","password-too-short","password-too-long","password-mismatch","captcha-format","INVALID_REQUEST","EXPIRED","UNAVAILABLE","not-ready","secure-command-only","chat-login-prompt","chat-register-prompt","chat-confirm-prompt","dialog-title","dialog-body","dialog-password-label","dialog-confirm-label","dialog-submit","admin-console-only","admin-use-velocity","admin-help","admin-invalid-username","admin-list-header","admin-list-row","admin-list-more","admin-info","admin-status-ok","admin-status-not-found","admin-status-invalid-request","admin-status-busy","admin-status-unavailable"))messages.component("messages."+key);
    limbo=new LimboManager(this,Objects.requireNonNull(getConfig().getConfigurationSection("limbo"),"Missing configuration section: limbo"));limbo.load();
    presentation=new PlayerPresentation(this,messages,getConfig());
    if(!"AFTER_JOIN".equals(getConfig().getString("stage")) || !"MAP".equals(getConfig().getString("captcha-view")))throw new IllegalArgumentException("Only AFTER_JOIN with MAP captcha is implemented");
@@ -60,7 +60,7 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
    if(!new File(getDataFolder(),file).exists()){saveResource(file,false);getLogger().warning("Created "+file+"; configure its TLS identity and trust before Selene can accept players");}
    Properties props=roleProperties(file,standalone);
    var tls=(!standalone || required(props,"endpoint").startsWith("tls:"))?tlsContext(file,props):null;
-   gateway=standalone?BackendGateway.connect(required(props,"endpoint"),tls,strictBoolean(props,"allow-loopback-plaintext"),Duration.ofSeconds(5)):new RelayGateway(tls,required(props,"host"),positiveInt(props,"port"),Duration.ofSeconds(5),32);
+   if(standalone){BackendGateway backend=BackendGateway.connect(required(props,"endpoint"),tls,strictBoolean(props,"allow-loopback-plaintext"),Duration.ofSeconds(5));gateway=backend;adminGateway=backend;}else gateway=new RelayGateway(tls,required(props,"host"),positiveInt(props,"port"),Duration.ofSeconds(5),32);
    if(standalone)getLogger().info("Selene STANDALONE backend endpoint: "+required(props,"endpoint"));
    else getLogger().info("Selene PROXY_AUTH relay endpoint: "+required(props,"host")+":"+positiveInt(props,"port")+" (must match Velocity relay-bind)");
    captcha=standalone&&strictBoolean(props,"captcha-required");
@@ -68,10 +68,12 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
    getServer().getPluginManager().registerEvents(this,this);
    if(!standalone){getServer().getMessenger().registerIncomingPluginChannel(this,SESSION_CHANNEL,this);getServer().getMessenger().registerOutgoingPluginChannel(this,SESSION_CHANNEL);}
    for(String command:List.of("login","register")){getCommand(command).setExecutor(this);getCommand(command).setTabCompleter((s,c,a,args)->List.of());}
+   getCommand("selene").setExecutor(new AccountAdminCommand(this,standalone,adminGateway,messages));getCommand("selene").setTabCompleter((s,c,a,args)->List.of());
    presentationTask=Bukkit.getScheduler().scheduleSyncRepeatingTask(this,()->{long now=System.currentTimeMillis();for(Session session:sessions.values())if(current(session)&&session.auth.view().stage()!=AuthStage.AUTHENTICATED)presentation.render(session.player,session.snapshot,session.auth.view(),now);},20,20);
+   getLogger().info("Ready: role="+role+", limbo="+getConfig().getString("limbo.world")+", dialogs="+getConfig().getBoolean("dialogs")+", packetEvents="+packetEventsEnabled);
    // Reload is unsupported: no existing connection may inherit authentication.
    for(Player p:Bukkit.getOnlinePlayers())p.kick(msg("unavailable"));
-  }catch(Exception | LinkageError e){String reason=e.getMessage()==null?e.getClass().getSimpleName():e.getMessage();getLogger().log(Level.SEVERE,"Selene could not initialize securely: "+reason+". Stopping server.",e);Bukkit.shutdown();}
+  }catch(Exception | LinkageError e){String reason=e.getMessage()==null?e.getClass().getSimpleName():e.getMessage();getLogger().severe("Startup failed: "+reason+". Check plugins/Selene configuration; the server will stop.");getLogger().log(Level.FINE,"Selene startup failure details",e);Bukkit.shutdown();}
  }
  private javax.net.ssl.SSLContext tlsContext(String file,Properties props)throws Exception{
   Path key=new File(getDataFolder(),required(props,"key-store")).toPath();Path trust=new File(getDataFolder(),required(props,"trust-store")).toPath();

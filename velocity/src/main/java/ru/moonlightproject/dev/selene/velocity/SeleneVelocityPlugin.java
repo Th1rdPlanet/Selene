@@ -85,7 +85,10 @@ public final class SeleneVelocityPlugin {
                 VelocityConfig config = VelocityConfig.load(configFile);
                 VelocityMessages messages = new VelocityMessages(config.messages(), Set.of(
                     "denied", "busy", "strong", "backend-unavailable", "auth-required",
-                    "premium-lookup-unavailable", "session-channel-unavailable"));
+                    "premium-lookup-unavailable", "session-channel-unavailable", "admin-console-only",
+                    "admin-help", "admin-invalid-username", "admin-list-header", "admin-list-row",
+                    "admin-list-more", "admin-info", "admin-status-ok", "admin-status-not-found",
+                    "admin-status-invalid-request", "admin-status-busy", "admin-status-unavailable"));
                 ForkCapabilities fork = findForkCapabilities();
                 if (config.forkEnabled() && !fork.supportsEarlyAdmission()) {
                     throw new IllegalStateException("fork-enabled requires a compatible Selene fork API provider");
@@ -97,7 +100,7 @@ public final class SeleneVelocityPlugin {
                 SSLContext tls = TlsContexts.load(
                     config.keyStore(), config.keyStorePasswordEnv(),
                     config.trustStore(), config.trustStorePasswordEnv());
-                AuthGateway backend = BackendGateway.connect(
+                BackendGateway backend = BackendGateway.connect(
                     config.backendEndpoint(), tls, config.allowLoopbackPlaintext(), Duration.ofSeconds(3));
                 AdmissionPolicy admission = new AdmissionPolicy(
                     config.sessionCapacity(), config.perIpLimit(), config.perIpWindow());
@@ -116,12 +119,15 @@ public final class SeleneVelocityPlugin {
                 runtime = new RuntimeState(
                     config, messages, backend, admission, attacks, sessions, identities, premiumLookup, relay, fork);
                 proxy.getChannelRegistrar().register(SESSION_CHANNEL);
+                proxy.getCommandManager().register(proxy.getCommandManager().metaBuilder("selene").plugin(this).build(),new AccountAdminCommand(backend,messages,logger));
                 refreshSnapshot();
                 proxy.getScheduler().buildTask(this, this::refreshSnapshot)
                     .repeat(30, TimeUnit.SECONDS).schedule();
-                logger.info("Selene Velocity started; auth relay listening on {}", config.relayBind());
+                logger.info("Selene ready: authServer={}, defaultServer={}, relay={}, attackFloor={}, autoAttack={}",config.authServer(),config.defaultServer(),config.relayBind(),config.attackLevel(),config.autoAttack());
             } catch (Exception error) {
-                logger.error("Selene cannot start safely", error);
+                String reason=error.getMessage()==null?error.getClass().getSimpleName():error.getMessage();
+                logger.error("Selene startup failed: {}. Check plugins/selene/velocity.properties; the proxy will stop.",reason);
+                logger.debug("Selene startup failure details",error);
                 proxy.shutdown(Component.text("Selene authentication is unavailable"));
             }
         });
@@ -285,6 +291,7 @@ public final class SeleneVelocityPlugin {
         RuntimeState state = runtime;
         runtime = null;
         proxy.getChannelRegistrar().unregister(SESSION_CHANNEL);
+        proxy.getCommandManager().unregister("selene");
         if (state != null) {
             state.relay().close();
             state.backend().close();

@@ -28,9 +28,10 @@ final class VelocityMessages {
   return miniMessage.deserialize(template,resolvers);
  }
 
- static TagResolver player(String value){return Placeholder.component("player",Component.text(value));}
- static TagResolver account(String value){return Placeholder.component("account",Component.text(value));}
- static TagResolver command(String value){return Placeholder.component("command",Component.text(value));}
- static TagResolver seconds(long value){return Placeholder.component("seconds",Component.text(Long.toString(value)));}
+ static TagResolver literal(String key,String value){return Placeholder.component(key,Component.text(value));}
+ static TagResolver player(String value){return literal("player",value);}
+ static TagResolver account(String value){return literal("account",value);}
+ static TagResolver command(String value){return literal("command",value);}
+ static TagResolver seconds(long value){return literal("seconds",Long.toString(value));}
  private static TagResolver validationResolver(){return TagResolver.resolver(player("player"),account("account"),command("command"),seconds(1));}
 }

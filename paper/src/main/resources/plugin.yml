@@ -11,3 +11,5 @@ commands:
     aliases: [l]
   register:
     aliases: [reg]
+  selene:
+    description: Selene console administration
