@@ -27,6 +27,7 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
  private static final String SESSION_CHANNEL="selene:session";
  private final Map<UUID,Session> sessions=new ConcurrentHashMap<>();
  private final AuthFlow flow=new AuthFlow();
+ private final SecureChatInput secureInput=new SecureChatInput();
  private InventoryProtection inventoryProtection; private AuthGateway gateway; private AuthMessages messages; private LimboManager limbo; private PlayerPresentation presentation; private int presentationTask=-1; private boolean standalone,captcha,dialogCapable,packetEventsEnabled;
  private static final class Session {
   final Player player; final Object inventoryConnection; final AuthSession auth; final PresentationSnapshot snapshot;
@@ -42,7 +43,7 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
    var presentationSection=getConfig().getConfigurationSection("presentation");if(presentationSection==null)throw new IllegalArgumentException("Missing configuration section: presentation");
    for(String key:List.of("title","subtitle","actionbar","scoreboard-title","scoreboard-line-1","scoreboard-line-2")){String value=presentationSection.getString(key);if(value==null)throw new IllegalArgumentException("Missing message template: presentation."+key);templates.put("presentation."+key,value);}
    messages=new AuthMessages(templates);
-   for(String key:List.of("unavailable","timeout","blocked","usage","CAPTCHA","CAPTCHA_INVALID","LOGIN","REGISTER","AUTHENTICATED","INVALID_CREDENTIALS","ACCOUNT_EXISTS","RATE_LIMITED","BUSY","password-too-short","password-too-long","password-mismatch","captcha-format","INVALID_REQUEST","EXPIRED","UNAVAILABLE","not-ready","dialog-title","dialog-close"))messages.component("messages."+key);
+   for(String key:List.of("unavailable","timeout","blocked","usage","CAPTCHA","CAPTCHA_INVALID","LOGIN","REGISTER","AUTHENTICATED","INVALID_CREDENTIALS","ACCOUNT_EXISTS","RATE_LIMITED","BUSY","password-too-short","password-too-long","password-mismatch","captcha-format","INVALID_REQUEST","EXPIRED","UNAVAILABLE","not-ready","secure-command-only","chat-login-prompt","chat-register-prompt","chat-confirm-prompt","dialog-title","dialog-body","dialog-password-label","dialog-confirm-label","dialog-submit"))messages.component("messages."+key);
    limbo=new LimboManager(this,Objects.requireNonNull(getConfig().getConfigurationSection("limbo"),"Missing configuration section: limbo"));limbo.load();
    presentation=new PlayerPresentation(this,messages,getConfig());
    if(!"AFTER_JOIN".equals(getConfig().getString("stage")) || !"MAP".equals(getConfig().getString("captcha-view")))throw new IllegalArgumentException("Only AFTER_JOIN with MAP captcha is implemented");
@@ -129,10 +130,11 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
     if(error!=null||reply==null){s.player.kick(msg("unavailable"));return;}
     if(!flow.accept(s.auth,requestSession,reply,System.currentTimeMillis())){s.player.kick(msg("unavailable"));return;}
     switch(reply.status()){
-     case "AUTHENTICATED" -> {if(packetEventsEnabled)inventoryProtection.authenticate(s.inventoryConnection);presentation.restore(s.player,s.snapshot);restoreVisibility(s);releaseMap(s);s.player.updateInventory();limbo.exit(s.player,s.snapshot);s.player.sendMessage(msg("AUTHENTICATED"));}
+     case "AUTHENTICATED" -> {secureInput.clear(s.player.getUniqueId());if(packetEventsEnabled)inventoryProtection.authenticate(s.inventoryConnection);presentation.restore(s.player,s.snapshot);restoreVisibility(s);releaseMap(s);s.player.updateInventory();limbo.exit(s.player,s.snapshot);s.player.sendMessage(msg("AUTHENTICATED"));}
      case "CAPTCHA" -> {try{showMap(s,reply.image());s.player.sendMessage(msg("CAPTCHA"));}catch(Exception ex){s.player.kick(msg("unavailable"));}}
-     case "LOGIN","REGISTER" -> {var text=msg(reply.status());s.player.sendMessage(text);if(dialogCapable&&getConfig().getBoolean("dialogs"))try{AuthNotice.show(s.player,msg("dialog-title"),text,msg("dialog-close"));}catch(LinkageError ignored){}}
-     case "CAPTCHA_INVALID","INVALID_CREDENTIALS","ACCOUNT_EXISTS","RATE_LIMITED","BUSY" -> s.player.sendMessage(msg(reply.status()));
+     case "LOGIN","REGISTER" -> {s.player.sendMessage(msg(reply.status()));openCredentialInput(s,reply.status());}
+     case "CAPTCHA_INVALID","RATE_LIMITED","BUSY" -> s.player.sendMessage(msg(reply.status()));
+     case "INVALID_CREDENTIALS","ACCOUNT_EXISTS" -> {s.player.sendMessage(msg(reply.status()));openCredentialInput(s,"LOGIN");}
      default -> {String key=AuthInputValidation.messageKeyForStatus(reply.status());if(key==null)s.player.kick(msg("unavailable"));else if(reply.status().equals("EXPIRED"))s.player.kick(msg(key));else s.player.sendMessage(msg(key));}
     }
    });
@@ -158,6 +160,8 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
  @Override public boolean onCommand(CommandSender sender,Command cmd,String label,String[] args){
   if(!(sender instanceof Player p))return true;Session s=sessions.get(p.getUniqueId());if(s==null||s.auth.view().stage()==AuthStage.AUTHENTICATED)return true;
   String name=cmd.getName();
+  if(args.length==0){openCredentialInput(s,name.equals("register")?"REGISTER":"LOGIN");return true;}
+  if(!getConfig().getBoolean("secure-input.compatibility-password-arguments",false)){p.sendMessage(msg("secure-command-only"));return true;}
   if((name.equals("register")&&args.length!=2)||(!name.equals("register")&&args.length!=1)){p.sendMessage(msg("usage"));return true;}
   AuthInputValidation.ValidationResult validation=name.equals("register")
    ?AuthInputValidation.registration(args[0],args[1],8,256)
@@ -167,11 +171,11 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
   if(!accepted){p.sendMessage(msg("not-ready"));return true;}
   request(s,name,args[0],"");return true;
  }
- @EventHandler public void quit(PlayerQuitEvent e){Session s=sessions.get(e.getPlayer().getUniqueId());if(s!=null&&s.player==e.getPlayer()&&sessions.remove(e.getPlayer().getUniqueId(),s)){if(packetEventsEnabled)inventoryProtection.close(s.inventoryConnection);presentation.restore(s.player,s.snapshot);restoreVisibility(s);releaseMap(s);gateway.call(dto(s,"close","",""));flow.close(s.auth);}}
+ @EventHandler public void quit(PlayerQuitEvent e){secureInput.clear(e.getPlayer().getUniqueId());Session s=sessions.get(e.getPlayer().getUniqueId());if(s!=null&&s.player==e.getPlayer()&&sessions.remove(e.getPlayer().getUniqueId(),s)){if(packetEventsEnabled)inventoryProtection.close(s.inventoryConnection);presentation.restore(s.player,s.snapshot);restoreVisibility(s);releaseMap(s);gateway.call(dto(s,"close","",""));flow.close(s.auth);}}
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void move(PlayerMoveEvent e){Location from=e.getFrom(),to=e.getTo();if(locked(e.getPlayer())&&to!=null&&Countdown.movementChanged(from.getX(),from.getY(),from.getZ(),from.getYaw(),from.getPitch(),to.getX(),to.getY(),to.getZ(),to.getYaw(),to.getPitch()))e.setTo(from);}
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void teleport(PlayerTeleportEvent e){if(locked(e.getPlayer())&&e.getCause()!=PlayerTeleportEvent.TeleportCause.PLUGIN)e.setCancelled(true);}
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void command(PlayerCommandPreprocessEvent e){if(locked(e.getPlayer())){String c=e.getMessage().split(" ",2)[0].substring(1);if(!PacketPolicy.allowCommand(c)){e.setCancelled(true);e.getPlayer().sendMessage(msg("blocked"));}}}
- @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void chat(AsyncPlayerChatEvent e){if(locked(e.getPlayer()))e.setCancelled(true);}
+ @EventHandler(priority=EventPriority.LOWEST,ignoreCancelled=false) public void chat(AsyncPlayerChatEvent e){if(!locked(e.getPlayer()))return;e.setCancelled(true);Player player=e.getPlayer();Session session=sessions.get(player.getUniqueId());if(session==null||!secureInput.shouldCapture(player.getUniqueId(),session.auth))return;String input=e.getMessage();Bukkit.getScheduler().runTask(this,()->consumeSecureInput(session,input));}
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void interact(PlayerInteractEvent e){if(locked(e.getPlayer()))e.setCancelled(true);}
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void interactEntity(PlayerInteractEntityEvent e){if(locked(e.getPlayer()))e.setCancelled(true);}
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void damage(EntityDamageEvent e){if(e.getEntity() instanceof Player p&&locked(p))e.setCancelled(true);if(e instanceof EntityDamageByEntityEvent hit&&hit.getDamager() instanceof Player p&&locked(p))e.setCancelled(true);}
@@ -183,6 +187,35 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void swap(PlayerSwapHandItemsEvent e){if(locked(e.getPlayer()))e.setCancelled(true);}
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void consume(PlayerItemConsumeEvent e){if(locked(e.getPlayer()))e.setCancelled(true);}
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void held(PlayerItemHeldEvent e){if(locked(e.getPlayer()))e.setCancelled(true);}
+ private void openCredentialInput(Session s,String kind){
+  if(!current(s))return;boolean registration=kind.equals("REGISTER");AuthStage expected=registration?AuthStage.WAITING_FOR_REGISTRATION:AuthStage.WAITING_FOR_LOGIN;if(s.auth.view().stage()!=expected){s.player.sendMessage(msg("not-ready"));return;}
+  if(dialogCapable&&getConfig().getBoolean("dialogs"))try{
+   if(registration)AuthDialogs.registration(s.player,messages,(password,confirmation)->Bukkit.getScheduler().runTask(this,()->submitRegistration(s,password,confirmation)));
+   else AuthDialogs.login(s.player,messages,password->Bukkit.getScheduler().runTask(this,()->submitLogin(s,password)));
+   return;
+  }catch(LinkageError|RuntimeException error){getLogger().fine("Native authentication dialog unavailable for "+s.player.getName()+": "+error.getClass().getSimpleName());}
+  if(registration){secureInput.beginRegistration(s.player.getUniqueId(),s.auth);s.player.sendMessage(msg("chat-register-prompt"));}
+  else{secureInput.beginLogin(s.player.getUniqueId(),s.auth);s.player.sendMessage(msg("chat-login-prompt"));}
+ }
+ private void consumeSecureInput(Session s,String input){
+  if(!current(s))return;SecureChatInput.Result result=secureInput.accept(s.player.getUniqueId(),s.auth,input);
+  if(!result.messageKey().isEmpty()){s.player.sendMessage(msg(result.messageKey()));return;}
+  switch(result.action()){
+   case CAPTCHA -> {if(flow.submitCaptcha(s.auth,result.secret()))request(s,"answer","",result.secret());else s.player.sendMessage(msg("not-ready"));}
+   case LOGIN -> submitLogin(s,result.secret());
+   case AWAIT_CONFIRMATION -> s.player.sendMessage(msg("chat-confirm-prompt"));
+   case REGISTER -> submitRegistration(s,result.secret(),result.confirmation());
+   case NONE -> {}
+  }
+ }
+ private void submitLogin(Session s,String password){
+  if(!current(s))return;AuthInputValidation.ValidationResult validation=AuthInputValidation.password(password,8,256);if(!validation.valid()){s.player.sendMessage(msg(validation.messageKey()));openCredentialInput(s,"LOGIN");return;}
+  if(!flow.submitLogin(s.auth,password)){s.player.sendMessage(msg("not-ready"));return;}request(s,"login",password,"");
+ }
+ private void submitRegistration(Session s,String password,String confirmation){
+  if(!current(s))return;AuthInputValidation.ValidationResult validation=AuthInputValidation.registration(password,confirmation,8,256);if(!validation.valid()){s.player.sendMessage(msg(validation.messageKey()));openCredentialInput(s,"REGISTER");return;}
+  if(!flow.submitRegistration(s.auth,password,confirmation)){s.player.sendMessage(msg("not-ready"));return;}request(s,"register",password,"");
+ }
  private void applyVisibility(Session s){
   for(Player other:Bukkit.getOnlinePlayers()){
    if(other.equals(s.player))continue;

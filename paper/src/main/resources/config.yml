@@ -19,9 +19,13 @@ stage: AFTER_JOIN
 # Сейчас поддерживается MAP: backend генерирует цифровую CAPTCHA, Paper показывает карту.
 captcha-view: MAP
 
-# На клиентах 1.21.8+ дополнительно показывать нативные информационные диалоги.
-# Команды и CAPTCHA остаются доступны в чате; весь текст задаётся ниже.
+# На клиентах 1.21.8+ показывать нативные диалоги с полями ввода.
 dialogs: true
+
+# Безопасный fallback использует отменённое сообщение чата. Аргументы команд
+# отключены по умолчанию: посторонний плагин может увидеть command packet раньше Selene.
+secure-input:
+  compatibility-password-arguments: false
 
 # Отключить игрока, если он не завершил CAPTCHA/вход за указанное время.
 timeout-seconds: 120
@@ -75,7 +79,11 @@ messages:
   timeout: '<red>Время на авторизацию истекло. Подключитесь ещё раз.</red>'
   blocked: '<yellow>Сначала завершите авторизацию.</yellow>'
   not-ready: '<yellow>Сейчас ожидается другое действие. Следуйте подсказке на экране.</yellow>'
-  usage: '<yellow>Используйте <white>/login</white> или <white>/register</white>.</yellow>'
+  secure-command-only: '<red>Не вводите пароль в команде.</red> <gray>Используйте команду без аргументов — Selene откроет безопасный ввод.</gray>'
+  chat-login-prompt: '<gold>Введите пароль следующим сообщением в чат.</gold> <gray>Сообщение не будет опубликовано.</gray>'
+  chat-register-prompt: '<gold>Придумайте пароль и отправьте его следующим сообщением в чат.</gold> <gray>Минимум 8 символов.</gray>'
+  chat-confirm-prompt: '<gold>Повторите пароль ещё одним сообщением.</gold>'
+  usage: '<yellow>Используйте <white>/login</white> или <white>/register</white> без аргументов.</yellow>'
   CAPTCHA: '<aqua>Введите в чат пять цифр с карты.</aqua>'
   CAPTCHA_INVALID: '<red>Код неверный.</red> <gray>Посмотрите на карту и попробуйте снова.</gray>'
   LOGIN: '<gold>Войдите в аккаунт через <white>/login</white>.</gold>'
@@ -93,4 +101,7 @@ messages:
   EXPIRED: '<red>Сессия авторизации истекла. Подключитесь ещё раз.</red>'
   UNAVAILABLE: '<red>Сервис авторизации временно недоступен. Повторите чуть позже.</red>'
   dialog-title: '<gradient:#8b5cf6:#38bdf8><bold>Selene</bold></gradient>'
-  dialog-close: '<gray>Продолжить</gray>'
+  dialog-body: '<gray>Данные отправляются только серверу авторизации и не публикуются в чат.</gray>'
+  dialog-password-label: '<white>Пароль</white>'
+  dialog-confirm-label: '<white>Повторите пароль</white>'
+  dialog-submit: '<green>Продолжить</green>'
