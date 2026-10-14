@@ -17,6 +17,17 @@ class VelocityConfigurationTest {
   assertTrue(Files.readString(directory.resolve("attack.yml")).contains("profiles:"));
   assertEquals(result.config(),VelocityConfiguration.load(directory).config());
  }
+ @Test void migratesLegacyNormalCaptchaIntoNormalProtectionProfile() throws Exception {
+  String old=new String(getClass().getResourceAsStream("/velocity.properties").readAllBytes(),java.nio.charset.StandardCharsets.UTF_8)
+   .replace("replace-with-64-character-lowercase-sha256","a".repeat(64))
+   .replace("normal-captcha=false","normal-captcha=true");
+  Files.writeString(directory.resolve("velocity.properties"),old);
+
+  var result=VelocityConfiguration.load(directory);
+
+  assertTrue(result.config().attackProfiles().get(ru.moonlightproject.dev.selene.core.AttackLevel.NORMAL).captchaEnabled());
+  assertTrue(Files.readString(directory.resolve("attack.yml")).matches("(?s).*profiles:.*normal:.*captcha: true.*"));
+ }
  @Test void appendsNewDocumentedSettingsWithoutReplacingExistingValues() throws Exception {
   String old=new String(getClass().getResourceAsStream("/velocity.properties").readAllBytes(),java.nio.charset.StandardCharsets.UTF_8)
    .replace("replace-with-64-character-lowercase-sha256","a".repeat(64));

@@ -45,6 +45,8 @@ record VelocityConfiguration(VelocityConfig config, LanguageCatalog languages, b
                         String value=new GsonBuilder().disableHtmlEscaping().create().toJson(old.getProperty(key));
                         source=source.replaceAll("(?m)^"+java.util.regex.Pattern.quote(key)+":.*$",java.util.regex.Matcher.quoteReplacement(key+": "+value));
                     }
+                    if(file.equals("attack.yml")&&old.containsKey("normal-captcha"))
+                        source=normalProfileCaptcha(source,old.getProperty("normal-captcha"));
                 }
                 ConfigFiles.writeAtomic(path,source);
             }
@@ -52,6 +54,8 @@ record VelocityConfiguration(VelocityConfig config, LanguageCatalog languages, b
             Map<String,String> actual=yaml(configuredSource,file);
             for(String key:actual.keySet())if(!defaults.containsKey(key))
                 throw new IllegalArgumentException("Unknown or misplaced setting '"+key+"' in "+file);
+            if(file.equals("attack.yml")&&actual.containsKey("normal-captcha")&&!actual.containsKey("profiles.normal.captcha"))
+                source=normalProfileCaptcha(source,actual.get("normal-captcha"));
             String updated=appendMissingRootSections(configuredSource,source,defaults,actual);
             if(!updated.equals(configuredSource)) {
                 ConfigFiles.writeAtomic(path,updated);
@@ -66,6 +70,13 @@ record VelocityConfiguration(VelocityConfig config, LanguageCatalog languages, b
         Properties values=new Properties();values.putAll(merged);
         catalog.templates(language).forEach((key,value)->values.setProperty("message."+key,value));
         return new VelocityConfiguration(VelocityConfig.parse(values,directory.toAbsolutePath()),catalog,banner);
+    }
+    private static String normalProfileCaptcha(String source,String value) {
+        if(!Set.of("true","false").contains(value.toLowerCase(Locale.ROOT)))
+            throw new IllegalArgumentException("normal-captcha must be true or false");
+        return source.replaceFirst(
+            "(?m)(^profiles:\\R  normal:\\R    captcha:)\\s*(?:true|false)$",
+            "$1 "+Boolean.parseBoolean(value));
     }
     private static boolean bool(String value,String key) {
         if(!Set.of("true","false").contains(value))throw new IllegalArgumentException(key+" must be true or false");
