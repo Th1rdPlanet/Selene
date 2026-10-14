@@ -62,7 +62,8 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
    if(standalone&&!packetEventsEnabled)getLogger().warning("PacketEvents is disabled in STANDALONE mode; the client can receive the real inventory before authentication");
    String pack=getConfig().getString("resource-pack-provider","NONE");
    if(!Set.of("NONE","Oraxen","ItemsAdder").contains(pack) || (!pack.equals("NONE")&&getServer().getPluginManager().getPlugin(pack)==null))throw new IllegalArgumentException("Configured external pack manager is unavailable");
-   if(packetEventsEnabled)inventoryProtection=new PacketEventsInventoryProtection();
+   if(packetEventsEnabled){inventoryProtection=new PacketEventsInventoryProtection();getLogger().info("PacketEvents integration active: listener registered, role="+role+", mode="+packetMode+", version="+com.github.retrooper.packetevents.PacketEvents.getAPI().getVersion());}
+   else getLogger().info("PacketEvents integration inactive: role="+role+", mode="+packetMode+" (expected for PROXY_AUTH with AUTO)");
    String file=standalone?"standalone.properties":"relay.properties";
    if(!new File(getDataFolder(),file).exists()){saveResource(file,false);getLogger().warning("Created "+file+"; configure its TLS identity and trust before Selene can accept players");}
    Properties props=roleProperties(file,standalone);
@@ -105,10 +106,9 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
  private static int positiveInt(Properties props,String key){int value=Integer.parseInt(required(props,key));if(value<1||value>65535)throw new IllegalArgumentException("Setting must be a valid port: "+key);return value;}
  @Override public void onDisable(){
   for(Session s:sessions.values())s.player.kick(msg("unavailable"));
- sessions.clear();if(presentationTask!=-1)Bukkit.getScheduler().cancelTask(presentationTask);if(gateway!=null)gateway.close();
+ sessions.clear();if(presentationTask!=-1)Bukkit.getScheduler().cancelTask(presentationTask);if(gateway!=null)gateway.close();if(inventoryProtection!=null)inventoryProtection.shutdown();
   getServer().getMessenger().unregisterIncomingPluginChannel(this,SESSION_CHANNEL,this);
   getServer().getMessenger().unregisterOutgoingPluginChannel(this,SESSION_CHANNEL);
-  // A standalone firewall stays registered while connections may still be flushing during shutdown.
  }
  private net.kyori.adventure.text.Component msg(String key){return messages.component("messages."+key);}
  private boolean locked(Player p){Session s=sessions.get(p.getUniqueId());return s==null||s.auth.view().stage()!=AuthStage.AUTHENTICATED;}

@@ -9,9 +9,14 @@ import org.bukkit.inventory.ItemStack;
 
 final class PacketEventsInventoryProtection implements InventoryProtection {
     private final InventoryFirewall firewall = new InventoryFirewall();
+    private final com.github.retrooper.packetevents.event.PacketListenerCommon registration;
 
     PacketEventsInventoryProtection() {
-        PacketEvents.getAPI().getEventManager().registerListener(firewall);
+        var api = PacketEvents.getAPI();
+        if (api == null || !api.isLoaded() || !api.isInitialized() || api.isTerminated()) {
+            throw new IllegalStateException("PacketEvents API is present but not initialized; check plugin load order and PacketEvents startup logs");
+        }
+        registration = api.getEventManager().registerListener(firewall);
     }
 
     @Override public Object open(Player player) {
@@ -31,5 +36,10 @@ final class PacketEventsInventoryProtection implements InventoryProtection {
     @Override public void sendVirtualOffhand(Object connection, ItemStack item) {
         ((User) connection).sendPacketSilently(
             new WrapperPlayServerSetSlot(0, 0, 45, SpigotConversionUtil.fromBukkitItemStack(item)));
+    }
+
+    @Override public void shutdown() {
+        var api = PacketEvents.getAPI();
+        if (api != null && !api.isTerminated()) api.getEventManager().unregisterListener(registration);
     }
 }

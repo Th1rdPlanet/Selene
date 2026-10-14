@@ -8,4 +8,5 @@ interface InventoryProtection {
     void authenticate(Object connection);
     void close(Object connection);
     void sendVirtualOffhand(Object connection, ItemStack item);
+    void shutdown();
 }
