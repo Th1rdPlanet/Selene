@@ -1,0 +1,32 @@
+package ru.moonlightproject.dev.selene.paper;
+
+import org.junit.jupiter.api.Test;
+
+import java.util.HashMap;
+import java.util.Map;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+class PaperConfigValidatorTest {
+ @Test void appliesSafeOptionalDefaults(){
+  Map<String,Object> values=valid();
+  assertFalse(PaperConfigValidator.validate(values).compatibilityPasswordArguments());
+  assertTrue(PaperConfigValidator.validate(values).titleEnabled());
+ }
+ @Test void rejectsUnknownAndLegacyKeysWithActionablePath(){
+  Map<String,Object> unknown=valid();unknown.put("mystery",true);
+  assertEquals("Unknown Paper setting: mystery",assertThrows(IllegalArgumentException.class,()->PaperConfigValidator.validate(unknown)).getMessage());
+  Map<String,Object> legacy=valid();legacy.put("auth-location.enabled",true);
+  assertTrue(assertThrows(IllegalArgumentException.class,()->PaperConfigValidator.validate(legacy)).getMessage().contains("replace it with limbo.*"));
+ }
+ @Test void rejectsMissingLimboWorldAndInvalidBounds(){
+  Map<String,Object> missing=valid();missing.remove("limbo.world");
+  assertTrue(assertThrows(IllegalArgumentException.class,()->PaperConfigValidator.validate(missing)).getMessage().contains("limbo.world"));
+  Map<String,Object> bounds=valid();bounds.put("timeout-seconds",1);
+  assertTrue(assertThrows(IllegalArgumentException.class,()->PaperConfigValidator.validate(bounds)).getMessage().contains("timeout-seconds"));
+ }
+ @Test void invalidMiniMessageNamesItsConfigPath(){
+  assertTrue(assertThrows(IllegalArgumentException.class,()->new AuthMessages(Map.of("messages.bad","<red>broken"))).getMessage().startsWith("Invalid MiniMessage at messages.bad:"));
+ }
+ private static Map<String,Object> valid(){Map<String,Object> values=new HashMap<>();values.put("role","PROXY_AUTH");values.put("packet-events-mode","AUTO");values.put("stage","AFTER_JOIN");values.put("captcha-view","MAP");values.put("dialogs",true);values.put("timeout-seconds",120);values.put("limbo.mode","MANAGED");values.put("limbo.world","selene_limbo");return values;}
+}

@@ -32,6 +32,13 @@ class VelocityConfigTest {
         assertEquals(8, config.premiumLookupConcurrency());
     }
 
+    @Test
+    void rejectsInvalidOperationalBounds() throws Exception {
+        var file=Files.createTempFile("selene-velocity",".properties");
+        Files.writeString(file,valid().replace("session-capacity=4096","session-capacity=0"));
+        assertTrue(assertThrows(IllegalArgumentException.class,()->VelocityConfig.load(file)).getMessage().contains("session-capacity"));
+    }
+
     private static String valid() {
         return """
             backend-endpoint=tcp://127.0.0.1:38191

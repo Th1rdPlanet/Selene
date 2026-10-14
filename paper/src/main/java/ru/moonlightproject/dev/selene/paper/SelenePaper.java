@@ -37,6 +37,7 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
  @Override public void onEnable(){
   try {
    saveDefaultConfig();
+   PaperConfigValidator.validate(getConfig().getValues(true));
    Map<String,String> templates=new HashMap<>();var messageSection=getConfig().getConfigurationSection("messages");
    if(messageSection==null)throw new IllegalArgumentException("Missing configuration section: messages");
    for(String key:messageSection.getKeys(false)){Object value=messageSection.get(key);if(!(value instanceof String text))throw new IllegalArgumentException("Message must be text: messages."+key);templates.put("messages."+key,text);}
