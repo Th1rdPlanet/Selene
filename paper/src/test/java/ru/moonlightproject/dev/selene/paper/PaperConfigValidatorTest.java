@@ -24,6 +24,12 @@ class PaperConfigValidatorTest {
   assertTrue(assertThrows(IllegalArgumentException.class,()->PaperConfigValidator.validate(missing)).getMessage().contains("limbo.world"));
   Map<String,Object> bounds=valid();bounds.put("timeout-seconds",1);
   assertTrue(assertThrows(IllegalArgumentException.class,()->PaperConfigValidator.validate(bounds)).getMessage().contains("timeout-seconds"));
+  Map<String,Object> animation=valid();animation.put("presentation.title.fade-in-millis",-1);
+  assertTrue(assertThrows(IllegalArgumentException.class,()->PaperConfigValidator.validate(animation)).getMessage().contains("fade-in-millis"));
+ }
+ @Test void rejectsOldPresentationLayoutInsteadOfSilentlyIgnoringIt(){
+  Map<String,Object> values=valid();values.put("presentation.actionbar-enabled",true);
+  assertTrue(assertThrows(IllegalArgumentException.class,()->PaperConfigValidator.validate(values)).getMessage().contains("copy the new presentation section"));
  }
  @Test void invalidMiniMessageNamesItsConfigPath(){
   assertTrue(assertThrows(IllegalArgumentException.class,()->new AuthMessages(Map.of("messages.bad","<red>broken"))).getMessage().startsWith("Invalid MiniMessage at messages.bad:"));

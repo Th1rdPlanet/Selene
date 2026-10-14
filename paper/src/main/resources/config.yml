@@ -51,20 +51,91 @@ limbo:
   yaw: 0.0
   pitch: 0.0
 
-# Каналы подсказок независимы. Шкала опыта показывает оставшуюся долю времени,
-# уровень — оставшиеся секунды. Исходные значения восстанавливаются после входа.
+# --- Интерфейс авторизации --------------------------------------------------
+# Каждый канал включается отдельно. Во всех текстах работает MiniMessage и
+# плейсхолдер <seconds>. Состояния: connecting, captcha, login, register, processing.
+# title — крупный текст по центру экрана и строка subtitle под ним.
+# actionbar — строка НАД хотбаром. В Minecraft отдельного текстового "hotbar" нет.
+# scoreboard — боковая панель. В каждом состоянии разрешено от 1 до 15 строк.
+# experience — полоса и число уровня; они показывают оставшееся время.
 presentation:
-  title-enabled: true
-  actionbar-enabled: true
-  scoreboard-enabled: true
-  experience-bar: true
-  experience-level: true
-  title: '<gradient:#8b5cf6:#38bdf8><bold>SELENE</bold></gradient>'
-  subtitle: '<gray>Завершите проверку • <white><seconds> сек.</white></gray>'
-  actionbar: '<aqua>Авторизация защищает ваш аккаунт</aqua> <dark_gray>•</dark_gray> <white><seconds> сек.</white>'
-  scoreboard-title: '<gradient:#8b5cf6:#38bdf8><bold>Selene</bold></gradient>'
-  scoreboard-line-1: '<white>Завершите авторизацию</white>'
-  scoreboard-line-2: '<gray>Следуйте подсказке в центре экрана</gray>'
+  title:
+    # Показывать крупный title и subtitle во время авторизации.
+    enabled: true
+    # Время плавного появления title в миллисекундах.
+    fade-in-millis: 0
+    # Сколько title остаётся видимым. Selene обновляет его раз в секунду.
+    stay-millis: 1200
+    # Время плавного исчезновения title в миллисекундах.
+    fade-out-millis: 200
+    # Текст title/subtitle для каждого этапа. Пустая строка скрывает конкретную строку.
+    states:
+      connecting:
+        title: '<gradient:#8b5cf6:#38bdf8><bold>SELENE</bold></gradient>'
+        subtitle: '<gray>Устанавливаем защищённую сессию • <white><seconds> сек.</white></gray>'
+      captcha:
+        title: '<aqua><bold>ПРОВЕРКА</bold></aqua>'
+        subtitle: '<white>Введите в чат цифры с карты • <seconds> сек.</white>'
+      login:
+        title: '<gold><bold>ВХОД</bold></gold>'
+        subtitle: '<white>Используйте /login • <seconds> сек.</white>'
+      register:
+        title: '<green><bold>РЕГИСТРАЦИЯ</bold></green>'
+        subtitle: '<white>Используйте /register • <seconds> сек.</white>'
+      processing:
+        title: '<yellow><bold>ПОДОЖДИТЕ</bold></yellow>'
+        subtitle: '<gray>Проверяем данные • <white><seconds> сек.</white></gray>'
+
+  actionbar:
+    # Показывать строку над хотбаром.
+    enabled: true
+    # Формат actionbar для каждого этапа авторизации.
+    states:
+      connecting: '<gray>Подключение к системе авторизации...</gray> <dark_gray>•</dark_gray> <white><seconds> сек.</white>'
+      captcha: '<aqua>Введите пять цифр с карты прямо в чат</aqua> <dark_gray>•</dark_gray> <white><seconds> сек.</white>'
+      login: '<gold>Введите пароль через /login</gold> <dark_gray>•</dark_gray> <white><seconds> сек.</white>'
+      register: '<green>Создайте пароль через /register</green> <dark_gray>•</dark_gray> <white><seconds> сек.</white>'
+      processing: '<yellow>Запрос обрабатывается...</yellow> <dark_gray>•</dark_gray> <white><seconds> сек.</white>'
+
+  scoreboard:
+    # Показывать боковую панель во время авторизации.
+    enabled: true
+    # Заголовок и строки боковой панели для каждого этапа.
+    states:
+      connecting:
+        title: '<gradient:#8b5cf6:#38bdf8><bold>Selene</bold></gradient>'
+        lines:
+          - '<white>Защищённое подключение</white>'
+          - '<gray>Осталось: <seconds> сек.</gray>'
+      captcha:
+        title: '<aqua><bold>CAPTCHA</bold></aqua>'
+        lines:
+          - '<white>Посмотрите на карту</white>'
+          - '<gray>Введите 5 цифр в чат</gray>'
+          - '<dark_gray>Осталось: <seconds> сек.</dark_gray>'
+      login:
+        title: '<gold><bold>Вход</bold></gold>'
+        lines:
+          - '<white>Команда: /login</white>'
+          - '<gray>Пароль вводится безопасно</gray>'
+          - '<dark_gray>Осталось: <seconds> сек.</dark_gray>'
+      register:
+        title: '<green><bold>Регистрация</bold></green>'
+        lines:
+          - '<white>Команда: /register</white>'
+          - '<gray>Минимум 8 символов</gray>'
+          - '<dark_gray>Осталось: <seconds> сек.</dark_gray>'
+      processing:
+        title: '<yellow><bold>Selene</bold></yellow>'
+        lines:
+          - '<white>Проверяем данные</white>'
+          - '<gray>Пожалуйста, подождите</gray>'
+
+  experience:
+    # Полоса опыта уменьшается вместе с оставшимся временем.
+    bar-enabled: true
+    # Число уровня показывает количество оставшихся секунд.
+    level-enabled: true
 
 # Selene не раздаёт resource pack сам. Допустимые значения:
 # NONE, Oraxen, ItemsAdder. Выбранный плагин должен быть установлен на этом Paper.
