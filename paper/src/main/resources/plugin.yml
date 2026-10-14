@@ -5,7 +5,7 @@ api-version: '1.21'
 author: '~VicTim~'
 website: https://dev.moonlightproject.ru
 softdepend: [packetevents, Oraxen, ItemsAdder]
-load: STARTUP
+load: POSTWORLD
 commands:
   login:
     aliases: [l]

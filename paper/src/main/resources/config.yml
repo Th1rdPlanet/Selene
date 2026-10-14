@@ -36,14 +36,31 @@ visibility:
   hide-player-from-others: true
   hide-others-from-player: false
 
-# Необязательная точка ожидания для STANDALONE или собственного auth-мира.
-# При enabled=false игрок остаётся в точке, куда его поместил сервер.
-auth-location:
-  enabled: false
-  world: world
+# CAPTCHA и ввод пароля всегда проходят в limbo. MANAGED создаёт пустой мир сам;
+# EXISTING использует уже существующий мир и останавливает сервер при ошибке имени.
+limbo:
+  mode: MANAGED
+  world: selene_limbo
   x: 0.5
-  y: 100.0
+  y: 64.0
   z: 0.5
+  yaw: 0.0
+  pitch: 0.0
+
+# Каналы подсказок независимы. Шкала опыта показывает оставшуюся долю времени,
+# уровень — оставшиеся секунды. Исходные значения восстанавливаются после входа.
+presentation:
+  title-enabled: true
+  actionbar-enabled: true
+  scoreboard-enabled: true
+  experience-bar: true
+  experience-level: true
+  title: '<gradient:#8b5cf6:#38bdf8><bold>SELENE</bold></gradient>'
+  subtitle: '<gray>Завершите проверку • <white><seconds> сек.</white></gray>'
+  actionbar: '<aqua>Авторизация защищает ваш аккаунт</aqua> <dark_gray>•</dark_gray> <white><seconds> сек.</white>'
+  scoreboard-title: '<gradient:#8b5cf6:#38bdf8><bold>Selene</bold></gradient>'
+  scoreboard-line-1: '<white>Завершите авторизацию</white>'
+  scoreboard-line-2: '<gray>Следуйте подсказке в центре экрана</gray>'
 
 # Selene не раздаёт resource pack сам. Допустимые значения:
 # NONE, Oraxen, ItemsAdder. Выбранный плагин должен быть установлен на этом Paper.

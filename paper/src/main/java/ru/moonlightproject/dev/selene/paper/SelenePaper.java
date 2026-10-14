@@ -27,11 +27,11 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
  private static final String SESSION_CHANNEL="selene:session";
  private final Map<UUID,Session> sessions=new ConcurrentHashMap<>();
  private final AuthFlow flow=new AuthFlow();
- private InventoryProtection inventoryProtection; private AuthGateway gateway; private AuthMessages messages; private boolean standalone,captcha,dialogCapable,packetEventsEnabled;
+ private InventoryProtection inventoryProtection; private AuthGateway gateway; private AuthMessages messages; private LimboManager limbo; private PlayerPresentation presentation; private int presentationTask=-1; private boolean standalone,captcha,dialogCapable,packetEventsEnabled;
  private static final class Session {
-  final Player player; final Object inventoryConnection; final Location origin; final AuthSession auth;
-  MapView map; final Map<PotionEffectType,PotionEffect> previousEffects=new HashMap<>();
-  Session(Player p,Object connection,AuthSession auth){player=p;inventoryConnection=connection;origin=p.getLocation().clone();this.auth=auth;}
+  final Player player; final Object inventoryConnection; final AuthSession auth; final PresentationSnapshot snapshot;
+  MapView map;
+  Session(Player p,Object connection,AuthSession auth,PresentationSnapshot snapshot){player=p;inventoryConnection=connection;this.auth=auth;this.snapshot=snapshot;}
  }
  @Override public void onEnable(){
   try {
@@ -39,8 +39,12 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
    Map<String,String> templates=new HashMap<>();var messageSection=getConfig().getConfigurationSection("messages");
    if(messageSection==null)throw new IllegalArgumentException("Missing configuration section: messages");
    for(String key:messageSection.getKeys(false)){Object value=messageSection.get(key);if(!(value instanceof String text))throw new IllegalArgumentException("Message must be text: messages."+key);templates.put("messages."+key,text);}
+   var presentationSection=getConfig().getConfigurationSection("presentation");if(presentationSection==null)throw new IllegalArgumentException("Missing configuration section: presentation");
+   for(String key:List.of("title","subtitle","actionbar","scoreboard-title","scoreboard-line-1","scoreboard-line-2")){String value=presentationSection.getString(key);if(value==null)throw new IllegalArgumentException("Missing message template: presentation."+key);templates.put("presentation."+key,value);}
    messages=new AuthMessages(templates);
    for(String key:List.of("unavailable","timeout","blocked","usage","CAPTCHA","CAPTCHA_INVALID","LOGIN","REGISTER","AUTHENTICATED","INVALID_CREDENTIALS","ACCOUNT_EXISTS","RATE_LIMITED","BUSY","password-too-short","password-too-long","password-mismatch","captcha-format","INVALID_REQUEST","EXPIRED","UNAVAILABLE","not-ready","dialog-title","dialog-close"))messages.component("messages."+key);
+   limbo=new LimboManager(this,Objects.requireNonNull(getConfig().getConfigurationSection("limbo"),"Missing configuration section: limbo"));limbo.load();
+   presentation=new PlayerPresentation(this,messages,getConfig());
    if(!"AFTER_JOIN".equals(getConfig().getString("stage")) || !"MAP".equals(getConfig().getString("captcha-view")))throw new IllegalArgumentException("Only AFTER_JOIN with MAP captcha is implemented");
    String role=getConfig().getString("role",""); if(!Set.of("STANDALONE","PROXY_AUTH").contains(role))throw new IllegalArgumentException("Invalid role"); standalone=role.equals("STANDALONE");
    String packetMode=getConfig().getString("packet-events-mode","AUTO").toUpperCase(Locale.ROOT);
@@ -63,6 +67,7 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
    getServer().getPluginManager().registerEvents(this,this);
    if(!standalone){getServer().getMessenger().registerIncomingPluginChannel(this,SESSION_CHANNEL,this);getServer().getMessenger().registerOutgoingPluginChannel(this,SESSION_CHANNEL);}
    for(String command:List.of("login","register")){getCommand(command).setExecutor(this);getCommand(command).setTabCompleter((s,c,a,args)->List.of());}
+   presentationTask=Bukkit.getScheduler().scheduleSyncRepeatingTask(this,()->{long now=System.currentTimeMillis();for(Session session:sessions.values())if(current(session)&&session.auth.view().stage()!=AuthStage.AUTHENTICATED)presentation.render(session.player,session.snapshot,session.auth.view(),now);},20,20);
    // Reload is unsupported: no existing connection may inherit authentication.
    for(Player p:Bukkit.getOnlinePlayers())p.kick(msg("unavailable"));
   }catch(Exception | LinkageError e){String reason=e.getMessage()==null?e.getClass().getSimpleName():e.getMessage();getLogger().log(Level.SEVERE,"Selene could not initialize securely: "+reason+". Stopping server.",e);Bukkit.shutdown();}
@@ -90,7 +95,7 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
  private static int positiveInt(Properties props,String key){int value=Integer.parseInt(required(props,key));if(value<1||value>65535)throw new IllegalArgumentException("Setting must be a valid port: "+key);return value;}
  @Override public void onDisable(){
   for(Session s:sessions.values())s.player.kick(msg("unavailable"));
- sessions.clear();if(gateway!=null)gateway.close();
+ sessions.clear();if(presentationTask!=-1)Bukkit.getScheduler().cancelTask(presentationTask);if(gateway!=null)gateway.close();
   getServer().getMessenger().unregisterIncomingPluginChannel(this,SESSION_CHANNEL,this);
   getServer().getMessenger().unregisterOutgoingPluginChannel(this,SESSION_CHANNEL);
   // A standalone firewall stays registered while connections may still be flushing during shutdown.
@@ -102,13 +107,8 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
   if((packetEventsEnabled&&connection==null)||gateway==null){p.kick(msg("unavailable"));return;}
   long timeoutMillis=Math.max(10,getConfig().getLong("timeout-seconds",120))*1000;
   AuthSession auth=flow.open(new ConnectionKey(p.getUniqueId(),p),System.currentTimeMillis()+timeoutMillis);
-  Session s=new Session(p,connection,auth);sessions.put(p.getUniqueId(),s);
-  applyPresentation(s);
-  if(getConfig().getBoolean("auth-location.enabled")){
-   World w=Bukkit.getWorld(getConfig().getString("auth-location.world",""));
-   if(w==null){p.kick(msg("unavailable"));return;}
-   p.teleport(new Location(w,getConfig().getDouble("auth-location.x"),getConfig().getDouble("auth-location.y"),getConfig().getDouble("auth-location.z")));
-  }
+  PresentationSnapshot snapshot=presentation.begin(p);Session s=new Session(p,connection,auth,snapshot);sessions.put(p.getUniqueId(),s);
+  applyVisibility(s);limbo.enter(p);presentation.render(p,snapshot,auth.view(),System.currentTimeMillis());
   Bukkit.getScheduler().runTaskLater(this,()->{if(current(s)&&s.auth.view().stage()!=AuthStage.AUTHENTICATED)p.kick(msg("timeout"));},timeoutMillis/50);
   if(standalone){flow.bindToken(s.auth,UUID.randomUUID().toString());request(s,"begin","","");}
  }
@@ -129,7 +129,7 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
     if(error!=null||reply==null){s.player.kick(msg("unavailable"));return;}
     if(!flow.accept(s.auth,requestSession,reply,System.currentTimeMillis())){s.player.kick(msg("unavailable"));return;}
     switch(reply.status()){
-     case "AUTHENTICATED" -> {if(packetEventsEnabled)inventoryProtection.authenticate(s.inventoryConnection);restorePresentation(s);releaseMap(s);s.player.updateInventory();s.player.teleport(s.origin);s.player.sendMessage(msg("AUTHENTICATED"));}
+     case "AUTHENTICATED" -> {if(packetEventsEnabled)inventoryProtection.authenticate(s.inventoryConnection);presentation.restore(s.player,s.snapshot);restoreVisibility(s);releaseMap(s);s.player.updateInventory();limbo.exit(s.player,s.snapshot);s.player.sendMessage(msg("AUTHENTICATED"));}
      case "CAPTCHA" -> {try{showMap(s,reply.image());s.player.sendMessage(msg("CAPTCHA"));}catch(Exception ex){s.player.kick(msg("unavailable"));}}
      case "LOGIN","REGISTER" -> {var text=msg(reply.status());s.player.sendMessage(text);if(dialogCapable&&getConfig().getBoolean("dialogs"))try{AuthNotice.show(s.player,msg("dialog-title"),text,msg("dialog-close"));}catch(LinkageError ignored){}}
      case "CAPTCHA_INVALID","INVALID_CREDENTIALS","ACCOUNT_EXISTS","RATE_LIMITED","BUSY" -> s.player.sendMessage(msg(reply.status()));
@@ -167,8 +167,8 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
   if(!accepted){p.sendMessage(msg("not-ready"));return true;}
   request(s,name,args[0],"");return true;
  }
- @EventHandler public void quit(PlayerQuitEvent e){Session s=sessions.get(e.getPlayer().getUniqueId());if(s!=null&&s.player==e.getPlayer()&&sessions.remove(e.getPlayer().getUniqueId(),s)){if(packetEventsEnabled)inventoryProtection.close(s.inventoryConnection);restorePresentation(s);releaseMap(s);gateway.call(dto(s,"close","",""));flow.close(s.auth);}}
- @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void move(PlayerMoveEvent e){if(locked(e.getPlayer())&&e.hasChangedPosition())e.setTo(e.getFrom());}
+ @EventHandler public void quit(PlayerQuitEvent e){Session s=sessions.get(e.getPlayer().getUniqueId());if(s!=null&&s.player==e.getPlayer()&&sessions.remove(e.getPlayer().getUniqueId(),s)){if(packetEventsEnabled)inventoryProtection.close(s.inventoryConnection);presentation.restore(s.player,s.snapshot);restoreVisibility(s);releaseMap(s);gateway.call(dto(s,"close","",""));flow.close(s.auth);}}
+ @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void move(PlayerMoveEvent e){Location from=e.getFrom(),to=e.getTo();if(locked(e.getPlayer())&&to!=null&&Countdown.movementChanged(from.getX(),from.getY(),from.getZ(),from.getYaw(),from.getPitch(),to.getX(),to.getY(),to.getZ(),to.getYaw(),to.getPitch()))e.setTo(from);}
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void teleport(PlayerTeleportEvent e){if(locked(e.getPlayer())&&e.getCause()!=PlayerTeleportEvent.TeleportCause.PLUGIN)e.setCancelled(true);}
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void command(PlayerCommandPreprocessEvent e){if(locked(e.getPlayer())){String c=e.getMessage().split(" ",2)[0].substring(1);if(!PacketPolicy.allowCommand(c)){e.setCancelled(true);e.getPlayer().sendMessage(msg("blocked"));}}}
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void chat(AsyncPlayerChatEvent e){if(locked(e.getPlayer()))e.setCancelled(true);}
@@ -183,26 +183,14 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void swap(PlayerSwapHandItemsEvent e){if(locked(e.getPlayer()))e.setCancelled(true);}
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void consume(PlayerItemConsumeEvent e){if(locked(e.getPlayer()))e.setCancelled(true);}
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void held(PlayerItemHeldEvent e){if(locked(e.getPlayer()))e.setCancelled(true);}
- private void applyPresentation(Session s){
-  addOwnedEffect(s,PotionEffectType.BLINDNESS,"effects.blindness");
-  addOwnedEffect(s,PotionEffectType.DARKNESS,"effects.darkness");
+ private void applyVisibility(Session s){
   for(Player other:Bukkit.getOnlinePlayers()){
    if(other.equals(s.player))continue;
    if(getConfig().getBoolean("visibility.hide-player-from-others"))other.hidePlayer(this,s.player);
    if(getConfig().getBoolean("visibility.hide-others-from-player"))s.player.hidePlayer(this,other);
   }
  }
- private void addOwnedEffect(Session s,PotionEffectType type,String path){
-  if(!getConfig().getBoolean(path))return;
-  PotionEffect previous=s.player.getPotionEffect(type);if(previous!=null)s.previousEffects.put(type,previous);
-  s.player.addPotionEffect(new PotionEffect(type,Integer.MAX_VALUE,0,false,false,false));
- }
- private void restorePresentation(Session s){
-  for(PotionEffectType type:List.of(PotionEffectType.BLINDNESS,PotionEffectType.DARKNESS)){
-   if((type==PotionEffectType.BLINDNESS&&getConfig().getBoolean("effects.blindness"))||(type==PotionEffectType.DARKNESS&&getConfig().getBoolean("effects.darkness"))){
-    s.player.removePotionEffect(type);PotionEffect previous=s.previousEffects.get(type);if(previous!=null)s.player.addPotionEffect(previous);
-   }
-  }
+ private void restoreVisibility(Session s){
   for(Player other:Bukkit.getOnlinePlayers()){other.showPlayer(this,s.player);s.player.showPlayer(this,other);}
  }
 }
