@@ -32,6 +32,17 @@ record VelocityConfig(
     int strongConnections,
     int suspiciousIpConnections,
     int suspiciousIpUsernames,
+    int failureMinimumSamples,
+    int failureRatioLowPercent,
+    int failureRatioMediumPercent,
+    int pendingSessionsMedium,
+    int pendingSessionsStrong,
+    long outboundPacketsLow,
+    long outboundPacketsMedium,
+    long outboundPacketsStrong,
+    long outboundBytesLow,
+    long outboundBytesMedium,
+    long outboundBytesStrong,
     boolean normalCaptcha,
     boolean forkEnabled,
     boolean premiumLookupEnabled,
@@ -42,6 +53,7 @@ record VelocityConfig(
     int sessionCapacity,
     int perIpLimit,
     Duration perIpWindow,
+    Map<AttackLevel, AttackProfile> attackProfiles,
     Map<String, String> messages
 ) {
     private static final Set<String> KEYS = Set.of(
@@ -53,6 +65,14 @@ record VelocityConfig(
         "attack-auto", "attack-window-seconds", "attack-recovery-seconds",
         "attack-low-connections", "attack-medium-connections", "attack-strong-connections",
         "suspicious-ip-connections", "suspicious-ip-usernames",
+        "failure-minimum-samples", "failure-ratio-low-percent", "failure-ratio-medium-percent",
+        "pending-sessions-medium", "pending-sessions-strong",
+        "outbound-packets-low-per-second", "outbound-packets-medium-per-second", "outbound-packets-strong-per-second",
+        "outbound-bytes-low-per-second", "outbound-bytes-medium-per-second", "outbound-bytes-strong-per-second",
+        "profiles.normal.captcha", "profiles.normal.premium-bypass", "profiles.normal.suspicious-only", "profiles.normal.greenlist-only", "profiles.normal.reconnect-limit",
+        "profiles.low.captcha", "profiles.low.premium-bypass", "profiles.low.suspicious-only", "profiles.low.greenlist-only", "profiles.low.reconnect-limit",
+        "profiles.medium.captcha", "profiles.medium.premium-bypass", "profiles.medium.suspicious-only", "profiles.medium.greenlist-only", "profiles.medium.reconnect-limit",
+        "profiles.strong.captcha", "profiles.strong.premium-bypass", "profiles.strong.suspicious-only", "profiles.strong.greenlist-only", "profiles.strong.reconnect-limit",
         "premium-lookup-enabled", "premium-lookup-timeout-millis",
         "premium-lookup-cache-capacity", "premium-lookup-cache-seconds",
         "premium-lookup-concurrency");
@@ -62,12 +82,15 @@ record VelocityConfig(
         try (var reader = Files.newBufferedReader(file)) {
             properties.load(reader);
         }
+        return parse(properties,file.toAbsolutePath().getParent());
+    }
+
+    static VelocityConfig parse(Properties properties, Path directory) {
         for (String key : properties.stringPropertyNames()) {
             if (!KEYS.contains(key) && !key.startsWith("message.")) {
                 throw new IllegalArgumentException("Unknown Velocity setting: " + key);
             }
         }
-        Path directory = file.toAbsolutePath().getParent();
         Map<String, String> messages = properties.stringPropertyNames().stream()
             .filter(key -> key.startsWith("message."))
             .collect(Collectors.toUnmodifiableMap(
@@ -97,6 +120,17 @@ record VelocityConfig(
             positive(properties, "attack-strong-connections"),
             positive(properties, "suspicious-ip-connections"),
             positive(properties, "suspicious-ip-usernames"),
+            positive(properties,"failure-minimum-samples",20),
+            positive(properties,"failure-ratio-low-percent",50),
+            positive(properties,"failure-ratio-medium-percent",75),
+            positive(properties,"pending-sessions-medium",100),
+            positive(properties,"pending-sessions-strong",500),
+            positiveLong(properties,"outbound-packets-low-per-second",10_000),
+            positiveLong(properties,"outbound-packets-medium-per-second",25_000),
+            positiveLong(properties,"outbound-packets-strong-per-second",50_000),
+            positiveLong(properties,"outbound-bytes-low-per-second",1_000_000),
+            positiveLong(properties,"outbound-bytes-medium-per-second",2_500_000),
+            positiveLong(properties,"outbound-bytes-strong-per-second",5_000_000),
             bool(properties, "normal-captcha"),
             bool(properties, "fork-enabled"),
             bool(properties, "premium-lookup-enabled"),
@@ -107,6 +141,7 @@ record VelocityConfig(
             positive(properties, "session-capacity"),
             positive(properties, "per-ip-limit"),
             Duration.ofSeconds(positive(properties, "per-ip-window-seconds")),
+            profiles(properties),
             messages);
     }
 
@@ -128,10 +163,36 @@ record VelocityConfig(
         return Boolean.parseBoolean(value);
     }
 
+    private static boolean bool(Properties properties, String key, boolean fallback) {
+        return properties.containsKey(key) ? bool(properties, key) : fallback;
+    }
+
+    private static Map<AttackLevel, AttackProfile> profiles(Properties properties) {
+        var result = new java.util.EnumMap<AttackLevel, AttackProfile>(AttackLevel.class);
+        result.put(AttackLevel.NORMAL, profile(properties,"normal",bool(properties,"normal-captcha"),true,false,false,false));
+        result.put(AttackLevel.LOW, profile(properties,"low",true,true,true,false,false));
+        result.put(AttackLevel.MEDIUM, profile(properties,"medium",true,false,false,false,true));
+        result.put(AttackLevel.STRONG, profile(properties,"strong",false,true,false,true,true));
+        return Map.copyOf(result);
+    }
+
+    private static AttackProfile profile(Properties properties,String name,boolean captcha,boolean premium,
+                                         boolean suspicious,boolean greenlist,boolean reconnect) {
+        String prefix="profiles."+name+".";
+        return new AttackProfile(bool(properties,prefix+"captcha",captcha),bool(properties,prefix+"premium-bypass",premium),
+            bool(properties,prefix+"suspicious-only",suspicious),bool(properties,prefix+"greenlist-only",greenlist),
+            bool(properties,prefix+"reconnect-limit",reconnect));
+    }
+
     private static int positive(Properties properties, String key) {
         int value = Integer.parseInt(required(properties, key));
         if (value < 1) throw new IllegalArgumentException("Setting must be positive: " + key);
         return value;
+    }
+    private static int positive(Properties properties,String key,int fallback){return properties.containsKey(key)?positive(properties,key):fallback;}
+    private static long positiveLong(Properties properties,String key,long fallback){
+        if(!properties.containsKey(key))return fallback;long value=Long.parseLong(required(properties,key));
+        if(value<1)throw new IllegalArgumentException("Setting must be positive: "+key);return value;
     }
 
     private static InetSocketAddress address(String value) {

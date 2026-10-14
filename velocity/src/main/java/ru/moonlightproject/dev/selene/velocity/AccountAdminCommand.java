@@ -6,10 +6,13 @@ import org.slf4j.Logger;
 import ru.moonlightproject.dev.selene.core.*;
 
 final class AccountAdminCommand implements SimpleCommand {
+ private final java.util.function.Consumer<Invocation> protection;
  private final AccountAdminGateway gateway;private final VelocityMessages messages;private final Logger logger;
- AccountAdminCommand(AccountAdminGateway gateway,VelocityMessages messages,Logger logger){this.gateway=gateway;this.messages=messages;this.logger=logger;}
+ AccountAdminCommand(AccountAdminGateway gateway,VelocityMessages messages,Logger logger){this(gateway,messages,logger, invocation -> invocation.source().sendMessage(messages.component("admin-help")));}
+ AccountAdminCommand(AccountAdminGateway gateway,VelocityMessages messages,Logger logger,java.util.function.Consumer<Invocation> protection){this.gateway=gateway;this.messages=messages;this.logger=logger;this.protection=protection;}
  @Override public void execute(Invocation invocation){
   if(!(invocation.source() instanceof ConsoleCommandSource)){invocation.source().sendMessage(messages.component("admin-console-only"));return;}
+  if(invocation.arguments().length > 0 && invocation.arguments()[0].equalsIgnoreCase("attack")){protection.accept(invocation);return;}
   AdminCommandParser.Parsed parsed=AdminCommandParser.parse(invocation.arguments());if(!parsed.valid()){invocation.source().sendMessage(messages.component(parsed.error().equals("username")?"admin-invalid-username":"admin-help"));return;}
   long start=System.nanoTime();gateway.admin(parsed.request()).whenComplete((reply,error)->{
    AdminReply safe=error==null&&reply!=null?reply:new AdminReply("UNAVAILABLE",java.util.List.of(),null,0,false);render(invocation,safe);

@@ -10,6 +10,8 @@ use std::{net::SocketAddr, sync::Arc, time::Duration};
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Config {
+    #[serde(default)]
+    console: Console,
     listen: String,
     database_url_env: String,
     certificate: String,
@@ -24,6 +26,53 @@ struct Config {
     #[serde(default = "default_admin_page_size")]
     admin_page_size: u32,
 }
+#[derive(Deserialize)]
+#[serde(default, deny_unknown_fields)]
+struct Console {
+    language: String,
+    banner: bool,
+}
+impl Default for Console {
+    fn default() -> Self {
+        Self {
+            language: "ru".into(),
+            banner: true,
+        }
+    }
+}
+impl Console {
+    fn validate(&self) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            matches!(self.language.as_str(), "ru" | "en"),
+            "console.language must be ru or en"
+        );
+        Ok(())
+    }
+    fn info(&self, ru: &str, en: &str) {
+        println!(
+            "[Selene/INFO] {}",
+            if self.language == "ru" { ru } else { en }
+        );
+    }
+    fn startup(&self) {
+        if self.banner {
+            for line in [
+                "",
+                "    .-''-.    Selene Rust backend",
+                "   / .--'     MoonLightBridge",
+                "   \\ '--.     ~VicTim~",
+                "    '-..-'    dev.moonlightproject.ru",
+                "",
+            ] {
+                println!("[Selene/INFO] {line}");
+            }
+        }
+        self.info(
+            &format!("Запуск • версия {}", env!("CARGO_PKG_VERSION")),
+            &format!("Starting • version {}", env!("CARGO_PKG_VERSION")),
+        );
+    }
+}
 fn default_admin_concurrency() -> usize {
     4
 }
@@ -31,7 +80,14 @@ fn default_admin_page_size() -> u32 {
     50
 }
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn main() {
+    if let Err(error) = run().await {
+        // Only the contextual message: database drivers may put credentials in their error chain.
+        eprintln!("[Selene/ERROR] Запуск остановлен / Startup stopped: {error}");
+        std::process::exit(1);
+    }
+}
+async fn run() -> anyhow::Result<()> {
     if rustls::crypto::CryptoProvider::get_default().is_none() {
         rustls::crypto::aws_lc_rs::default_provider()
             .install_default()
@@ -45,6 +101,11 @@ async fn main() -> anyhow::Result<()> {
         .with_context(|| format!("cannot read backend config {path}"))?;
     let config: Config = toml::from_str(&source)
         .with_context(|| format!("invalid TOML in backend config {path}"))?;
+    config.console.validate()?;
+    config.console.startup();
+    config
+        .console
+        .info("Конфигурация загружена.", "Configuration loaded.");
     let address: SocketAddr = config.listen.parse().with_context(|| {
         format!(
             "invalid listen address '{}' (expected numeric IP:port)",
@@ -66,6 +127,9 @@ async fn main() -> anyhow::Result<()> {
         "database URL environment variable {} is empty",
         config.database_url_env
     );
+    config
+        .console
+        .info("Подключаем базу данных…", "Connecting to database…");
     let service = Arc::new(Service::new(&url, config.policy).await.with_context(|| {
         format!(
             "cannot initialize database configured by {} (value hidden)",
@@ -75,6 +139,10 @@ async fn main() -> anyhow::Result<()> {
     anyhow::ensure!(
         config.admin_concurrency > 0 && (1..=50).contains(&config.admin_page_size),
         "admin_concurrency must be positive and admin_page_size must be 1..=50"
+    );
+    config.console.info(
+        "База данных готова • схема проверена.",
+        "Database ready • schema checked.",
     );
     let admin = Arc::new(AdminService::new(
         service.storage_clone(),
@@ -133,7 +201,10 @@ async fn main() -> anyhow::Result<()> {
         })
         .build();
     let server = if config.development_plaintext {
-        eprintln!("Selene development plaintext enabled on loopback");
+        config.console.info(
+            "Локальный режим разработки • шифрование отключено.",
+            "Local development mode • encryption disabled.",
+        );
         Server::bind_tcp(&config.listen, router)
             .await
             .with_context(|| {
@@ -158,6 +229,26 @@ async fn main() -> anyhow::Result<()> {
             .await
             .with_context(|| format!("cannot bind TLS backend listener on {}", config.listen))?
     };
+    config.console.info(
+        &format!(
+            "Готово • слушаем {} • транспорт: {}",
+            config.listen,
+            if config.development_plaintext {
+                "TCP (development)"
+            } else {
+                "mTLS"
+            }
+        ),
+        &format!(
+            "Ready • listening on {} • transport: {}",
+            config.listen,
+            if config.development_plaintext {
+                "TCP (development)"
+            } else {
+                "mTLS"
+            }
+        ),
+    );
     server
         .with_hello_timeout(Duration::from_secs(5))
         .with_limits(ServerLimits {
@@ -170,4 +261,18 @@ async fn main() -> anyhow::Result<()> {
         .await
         .context("MoonLightBridge backend listener stopped with an error")?;
     Ok(())
+}
+
+#[cfg(test)]
+mod console_tests {
+    use super::*;
+    #[test]
+    fn console_defaults_and_language_validation() {
+        let console: Console = toml::from_str("").unwrap();
+        assert_eq!(console.language, "ru");
+        assert!(console.banner);
+        assert!(console.validate().is_ok());
+        let invalid: Console = toml::from_str("language='xx'").unwrap();
+        assert!(invalid.validate().is_err());
+    }
 }

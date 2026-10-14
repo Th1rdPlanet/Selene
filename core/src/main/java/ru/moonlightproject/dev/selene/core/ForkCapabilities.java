@@ -13,4 +13,8 @@ public interface ForkCapabilities {
   default AttackLevel attackLevel() {
     return AttackLevel.NORMAL;
   }
+  /** Current one-second outbound traffic rate. Must return immediately and never inspect payloads. */
+  default ProtectionSignals protectionSignals() {
+    return ProtectionSignals.UNAVAILABLE;
+  }
 }

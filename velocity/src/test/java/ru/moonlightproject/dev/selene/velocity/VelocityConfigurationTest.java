@@ -1,0 +1,23 @@
+package ru.moonlightproject.dev.selene.velocity;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import java.nio.file.*;
+import static org.junit.jupiter.api.Assertions.*;
+class VelocityConfigurationTest {
+ @TempDir Path directory;
+ @Test void migratesPropertiesAndPreservesCustomizedMessagesAndExistingFiles() throws Exception {
+  String old=new String(getClass().getResourceAsStream("/velocity.properties").readAllBytes(),java.nio.charset.StandardCharsets.UTF_8)
+   .replace("replace-with-64-character-lowercase-sha256","a".repeat(64)).replace("default-server=lobby","default-server=survival");
+  Files.writeString(directory.resolve("velocity.properties"),old);
+  Files.writeString(directory.resolve("premium.yml"),"premium-lookup-enabled: false\n");
+  var result=VelocityConfiguration.load(directory);
+  assertEquals("survival",result.config().defaultServer());
+  assertFalse(result.config().premiumLookupEnabled());
+  assertTrue(Files.exists(directory.resolve("velocity.properties.legacy.bak")));
+  assertEquals(result.config(),VelocityConfiguration.load(directory).config());
+ }
+ @Test void rejectsMisplacedAndDuplicateYamlSettings() throws Exception {
+  Files.writeString(directory.resolve("config.yml"),"role: PROXY_AUTH\n");
+  assertThrows(IllegalArgumentException.class,()->VelocityConfiguration.load(directory));
+ }
+}

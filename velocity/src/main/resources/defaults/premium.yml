@@ -1,0 +1,14 @@
+# Selene / Velocity — premium.yml
+# Только настройки прокси. Тексты находятся в languages/<язык>.json.
+
+# --- Проверка лицензии ------------------------------------------------------
+# Для неизвестного аккаунта спросить публичный Mojang profile API.
+premium-lookup-enabled: true
+# Предельное ожидание Mojang API, миллисекунды.
+premium-lookup-timeout-millis: 2000
+# Максимум результатов проверки лицензии в памяти.
+premium-lookup-cache-capacity: 10000
+# Время хранения результата проверки лицензии, секунды.
+premium-lookup-cache-seconds: 3600
+# Максимум одновременных внешних запросов; защищает proxy thread и Mojang API.
+premium-lookup-concurrency: 8

@@ -1,0 +1,77 @@
+# Selene / Velocity — attack.yml
+# Только настройки прокси. Тексты находятся в languages/<язык>.json.
+
+# --- Режим защиты -----------------------------------------------------------
+# Ручной нижний предел режима: NORMAL, LOW, MEDIUM или STRONG.
+# NORMAL: CAPTCHA согласно normal-captcha, без лимита переподключений.
+# LOW: CAPTCHA только подозрительным IP, без лимита переподключений.
+# MEDIUM: CAPTCHA всем; действует per-IP ограничение входов.
+# STRONG: допускаются только доверенные username+IP; premium проверяется после допуска.
+attack-level: "NORMAL"
+# Автоматически повышать режим по коротким всплескам подключений.
+attack-auto: true
+# Размер окна наблюдения и время спокойствия перед возвратом к нижнему режиму.
+attack-window-seconds: 10
+# Сколько секунд ждать после снижения нагрузки перед снижением защиты.
+attack-recovery-seconds: 30
+# Число новых подключений в окне для перехода LOW -> MEDIUM -> STRONG.
+attack-low-connections: 30
+# Порог MEDIUM: число подключений за окно наблюдения.
+attack-medium-connections: 60
+# Порог запроса STRONG: число подключений за окно; включение требует команды консоли.
+attack-strong-connections: 100
+# IP считается подозрительным, если в одном окне превышен любой порог ниже.
+suspicious-ip-connections: 8
+# Сколько разных ников с одного IP за окно считается подозрительной активностью.
+suspicious-ip-usernames: 4
+# Дополнительные сигналы считаются в том же окне. Доля ошибок учитывается только
+# после minimum-samples; значения ratio задаются целым процентом.
+failure-minimum-samples: 20
+failure-ratio-low-percent: 50
+failure-ratio-medium-percent: 75
+# Одновременно незавершённые CAPTCHA/входы. STRONG всё равно потребует подтверждения.
+pending-sessions-medium: 100
+pending-sessions-strong: 500
+# Исходящий трафик берётся только из ForkCapabilities.protectionSignals().
+# Обычный Velocity этих счётчиков не предоставляет, поэтому без форка пороги не срабатывают.
+outbound-packets-low-per-second: 10000
+outbound-packets-medium-per-second: 25000
+outbound-packets-strong-per-second: 50000
+outbound-bytes-low-per-second: 1000000
+outbound-bytes-medium-per-second: 2500000
+outbound-bytes-strong-per-second: 5000000
+# Нужна ли CAPTCHA для всех в NORMAL. В LOW/MEDIUM/STRONG правила описаны выше.
+normal-captcha: false
+# Поведение каждого уровня можно менять независимо. captcha: false отключает CAPTCHA;
+# suspicious-only включает её только для подозрительных IP; premium-bypass освобождает
+# проверенный лицензионный аккаунт от CAPTCHA; greenlist-only закрывает вход всем, кроме
+# совпавшей пары ник+IP; reconnect-limit включает ограничение повторных входов.
+profiles:
+  normal:
+    captcha: false
+    premium-bypass: true
+    suspicious-only: false
+    greenlist-only: false
+    reconnect-limit: false
+  low:
+    captcha: true
+    premium-bypass: true
+    suspicious-only: true
+    greenlist-only: false
+    reconnect-limit: false
+  medium:
+    captcha: true
+    premium-bypass: false
+    suspicious-only: false
+    greenlist-only: false
+    reconnect-limit: true
+  strong:
+    captcha: false
+    premium-bypass: true
+    suspicious-only: false
+    greenlist-only: true
+    reconnect-limit: true
+# Используется при MEDIUM: не больше N входов с IP за указанное окно.
+per-ip-limit: 3
+# Окно ограничения повторных входов с IP, секунды.
+per-ip-window-seconds: 10

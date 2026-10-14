@@ -1,0 +1,27 @@
+# Selene / Velocity — connection.yml
+# Только настройки прокси. Тексты находятся в languages/<язык>.json.
+
+# Selene / Velocity
+# Здесь находятся только настройки прокси. Настройки Paper-миров, эффектов и интерфейса
+# задаются отдельно на auth-сервере в plugins/Selene/config.yml.
+# --- Rust backend -----------------------------------------------------------
+# endpoint принимает tls://host:port. tcp:// разрешён только для локальной разработки
+# на loopback-адресе и только вместе с backend-allow-loopback-plaintext=true.
+backend-endpoint: "tls://127.0.0.1:38191"
+# Настройка backend-allow-loopback-plaintext.
+backend-allow-loopback-plaintext: false
+# PKCS12 с приватным ключом ЭТОГО Velocity. Путь считается от plugins/selene/.
+tls-keystore: "proxy.p12"
+# Здесь указывается ИМЯ переменной окружения с паролем, а не сам пароль.
+tls-keystore-password-env: "SELENE_PROXY_KEYSTORE_PASSWORD"
+# PKCS12 trust store с CA/сертификатом Rust backend.
+tls-truststore: "trust.p12"
+# Имя переменной окружения с паролем trust store. Сам пароль здесь не указывать.
+tls-truststore-password-env: "SELENE_PROXY_TRUSTSTORE_PASSWORD"
+# --- Связь Velocity -> Paper auth ------------------------------------------
+# Локальный mTLS relay, к которому подключается Selene на auth-сервере Paper.
+# Порт должен совпадать с port в plugins/Selene/relay.properties на auth-сервере.
+relay-bind: "127.0.0.1:38291"
+# SHA-256 сертификата Paper auth-сервера: 64 строчные hex-цифры без двоеточий.
+# Пример получения: openssl x509 -in paper-cert.pem -noout -fingerprint -sha256
+auth-server-certificate-sha256: "replace-with-64-character-lowercase-sha256"

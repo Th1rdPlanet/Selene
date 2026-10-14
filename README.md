@@ -21,3 +21,39 @@ Standalone Paper connects directly to the Rust backend and uses PacketEvents whe
 Each process owns its private key. Copy only certificates or CA material required to establish trust; never copy a node's private key to another node. See [certificate setup](docs/certificates.md), [Paper adapter](docs/paper.md), [Velocity adapter](docs/velocity.md), and [backend](backend/README.md).
 
 This repository contains an operational development build, not a production security certification. A real Paper 1.21.8 + Velocity + Minecraft client packet capture and end-to-end mTLS run remains required before public deployment.
+
+### Подтверждение сильной защиты на Velocity
+
+При рекомендации `STRONG` Selene сохраняет эффективный уровень `MEDIUM` и просит
+подтвердить ограничение входа командой в консоли прокси:
+
+```text
+selene attack status
+selene attack confirm
+```
+
+Напоминание повторяется раз в 10 секунд, пока запрос актуален. Команда доступна
+только консоли. Перед подтверждением Selene повторно проверяет состояние защиты;
+после восстановления разрешение сбрасывается. Следующая атака требует нового
+подтверждения. Это правило также применяется к рекомендации совместимого форка
+и уровню `STRONG` из конфигурации.
+
+Каждое фактическое переключение уровня, включая снижение, записывается в консоль:
+прежний и новый уровень, источник решения и причина. Проверка выполняется также
+раз в секунду, поэтому восстановление не ждёт следующего подключения.
+`attack-level` задаёт нижнюю границу защиты при автоматическом определении;
+до подтверждения `STRONG` эта граница ограничивается `MEDIUM`.
+
+### API форка Velocity
+
+Форк подключается через Java `ServiceLoader` и реализацию
+`ru.moonlightproject.dev.selene.core.ForkCapabilities`. При `fork-enabled: true`
+плагин проверяет `supportsEarlyAdmission()` и использует только быстрые локальные
+методы интерфейса. Сетевые запросы и блокировки в них недопустимы.
+
+`attackLevel()` возвращает уровень, рассчитанный самим ядром, `suspicious(username,
+ip)` добавляет локальный признак подозрительности, а `protectionSignals()` передаёт
+число исходящих пакетов и байтов за последнюю секунду. Счётчики не должны читать или
+сохранять содержимое пакетов. Для недоступного показателя возвращается `-1`; готовая
+константа — `ProtectionSignals.UNAVAILABLE`. Selene объединяет сигналы форка со
+своими подключениями, ошибками CAPTCHA/пароля и числом незавершённых сессий.

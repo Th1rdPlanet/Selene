@@ -21,6 +21,12 @@ admin_concurrency = 4
 # Максимальный размер страницы `selene account list`; допустимо 1..50.
 admin_page_size = 50
 
+[console]
+# Язык сообщений запуска: ru или en.
+language = "ru"
+# Показывать компактный логотип при запуске.
+banner = true
+
 [policy]
 # Максимум активных сессий и время жизни незавершённого входа.
 session_capacity = 10000

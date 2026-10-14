@@ -67,6 +67,7 @@ public final class SeleneVelocityPlugin {
     private final Map<String, String> lastServers = new ConcurrentHashMap<>();
     private volatile Set<String> premiumNames = Set.of();
     private volatile RuntimeState runtime;
+    private final java.util.concurrent.atomic.AtomicReference<Boolean> backendAvailable=new java.util.concurrent.atomic.AtomicReference<>();
 
     @Inject
     public SeleneVelocityPlugin(ProxyServer proxy, Logger logger, @DataDirectory Path dataDirectory) {
@@ -80,15 +81,11 @@ public final class SeleneVelocityPlugin {
         return EventTask.async(() -> {
             try {
                 Files.createDirectories(dataDirectory);
-                Path configFile = dataDirectory.resolve("velocity.properties");
-                installDefaultConfig(configFile);
-                VelocityConfig config = VelocityConfig.load(configFile);
-                VelocityMessages messages = new VelocityMessages(config.messages(), Set.of(
-                    "denied", "busy", "strong", "backend-unavailable", "auth-required",
-                    "premium-lookup-unavailable", "session-channel-unavailable", "admin-console-only",
-                    "admin-help", "admin-invalid-username", "admin-list-header", "admin-list-row",
-                    "admin-list-more", "admin-info", "admin-status-ok", "admin-status-not-found",
-                    "admin-status-invalid-request", "admin-status-busy", "admin-status-unavailable"));
+                VelocityConfiguration files = VelocityConfiguration.load(dataDirectory);
+                VelocityConfig config = files.config();
+                VelocityMessages messages = new VelocityMessages(files.languages());
+                if(files.banner())for(String line:ru.moonlightproject.dev.selene.core.StartupBanner.lines("0.1.0-dev", "Velocity"))logger.info(line);
+                logger.info(messages.plain("console-starting"));
                 ForkCapabilities fork = findForkCapabilities();
                 if (config.forkEnabled() && !fork.supportsEarlyAdmission()) {
                     throw new IllegalStateException("fork-enabled requires a compatible Selene fork API provider");
@@ -103,7 +100,11 @@ public final class SeleneVelocityPlugin {
                 AutoAttackController attacks = new AutoAttackController(
                     config.sessionCapacity(), config.attackWindow(), config.attackRecovery(),
                     config.lowConnections(), config.mediumConnections(), config.strongConnections(),
-                    config.suspiciousIpConnections(), config.suspiciousIpUsernames());
+                    config.suspiciousIpConnections(), config.suspiciousIpUsernames(),
+                    config.failureMinimumSamples(),config.failureRatioLowPercent(),config.failureRatioMediumPercent(),
+                    config.pendingSessionsMedium(),config.pendingSessionsStrong(),config.outboundPacketsLow(),
+                    config.outboundPacketsMedium(),config.outboundPacketsStrong(),config.outboundBytesLow(),
+                    config.outboundBytesMedium(),config.outboundBytesStrong());
                 ConnectionSessions sessions = new ConnectionSessions(config.sessionCapacity());
                 ConnectionIdentities<Player> identities = new ConnectionIdentities<>(config.sessionCapacity());
                 PremiumLookup premiumLookup = PremiumLookup.mojang(
@@ -113,16 +114,25 @@ public final class SeleneVelocityPlugin {
                     tls, config.relayBind(), Duration.ofSeconds(3), 64,
                     (request, fingerprint) -> relay(request, fingerprint));
                 runtime = new RuntimeState(
-                    config, messages, backend, admission, attacks, sessions, identities, premiumLookup, relay, fork);
+                    config, messages, backend, admission, attacks, sessions, identities, premiumLookup, relay, fork, new ProtectionState(
+                        change -> logger.info(messages.plain("protection-change",
+                            VelocityMessages.literal("previous",change.previous().name()),VelocityMessages.literal("current",change.current().name()),
+                            VelocityMessages.literal("source",change.source()),VelocityMessages.literal("reason",change.reason()))),
+                        () -> logger.warn(messages.plain("protection-pending"))));
                 proxy.getChannelRegistrar().register(SESSION_CHANNEL);
-                proxy.getCommandManager().register(proxy.getCommandManager().metaBuilder("selene").plugin(this).build(),new AccountAdminCommand(backend,messages,logger));
+                proxy.getCommandManager().register(proxy.getCommandManager().metaBuilder("selene").plugin(this).build(),new AccountAdminCommand(backend,messages,logger, this::protectionCommand));
+                currentLevel(runtime, System.currentTimeMillis());
+                proxy.getScheduler().buildTask(this, () -> {
+                    RuntimeState active = runtime;
+                    if (active != null) currentLevel(active, System.currentTimeMillis());
+                }).repeat(1, TimeUnit.SECONDS).schedule();
                 refreshSnapshot();
                 proxy.getScheduler().buildTask(this, this::refreshSnapshot)
                     .repeat(30, TimeUnit.SECONDS).schedule();
-                logger.info("Selene ready: authServer={}, defaultServer={}, relay={}, attackFloor={}, autoAttack={}",config.authServer(),config.defaultServer(),config.relayBind(),config.attackLevel(),config.autoAttack());
+                logger.info(messages.plain("console-ready",VelocityMessages.literal("auth",config.authServer()),VelocityMessages.literal("target",config.defaultServer()),VelocityMessages.literal("current",runtime.protection().level().name())));
             } catch (Exception error) {
                 String reason=error.getMessage()==null?error.getClass().getSimpleName():error.getMessage();
-                logger.error("Selene startup failed: {}. Check plugins/selene/velocity.properties; the proxy will stop.",reason);
+                logger.error("Selene startup failed: {}. Check plugins/selene/config.yml, connection.yml, attack.yml and premium.yml; the proxy will stop.",reason);
                 logger.debug("Selene startup failure details",error);
                 proxy.shutdown(Component.text("Selene authentication is unavailable"));
             }
@@ -141,12 +151,13 @@ public final class SeleneVelocityPlugin {
         long now = System.currentTimeMillis();
         state.attacks().observe(ip, username, now);
         AttackLevel level = currentLevel(state, now);
+        AttackProfile profile=state.config().attackProfiles().get(level);
         boolean suspicious = state.fork().suspicious(username, ip) || state.attacks().suspicious(ip, now);
-        if (level == AttackLevel.STRONG && !state.admission().isGreen(username, ip)) {
+        if (profile.greenlistOnly() && !state.admission().isGreen(username, ip)) {
             event.setResult(PreLoginEvent.PreLoginComponentResult.denied(text("strong")));
             return null;
         }
-        if (!state.admission().admit(level, ip, now)) {
+        if (profile.reconnectLimit() && !state.admission().admit(AttackLevel.MEDIUM, ip, now)) {
             event.setResult(PreLoginEvent.PreLoginComponentResult.denied(text("busy")));
             return null;
         }
@@ -154,9 +165,9 @@ public final class SeleneVelocityPlugin {
             event.setResult(PreLoginEvent.PreLoginComponentResult.forceOnlineMode());
             return null;
         }
-        AuthRequest profile = new AuthRequest(
+        AuthRequest profileRequest = new AuthRequest(
             "profile", UUID.randomUUID().toString(), username, ip, "", "", false, false);
-        return EventTask.resumeWhenComplete(state.backend().call(profile).thenCompose(reply -> switch (reply.status()) {
+        return EventTask.resumeWhenComplete(state.backend().call(profileRequest).thenCompose(reply -> switch (reply.status()) {
             case "ACCOUNT_PREMIUM" -> CompletableFuture.completedFuture(true);
             case "ACCOUNT_OFFLINE" -> CompletableFuture.completedFuture(false);
             case "ACCOUNT_NEW" -> state.config().premiumLookupEnabled()
@@ -180,9 +191,10 @@ public final class SeleneVelocityPlugin {
         String ip = player.getRemoteAddress().getAddress().getHostAddress();
         long now = System.currentTimeMillis();
         AttackLevel level = currentLevel(state, now);
+        AttackProfile profile=state.config().attackProfiles().get(level);
         boolean suspicious = state.fork().suspicious(player.getUsername(), ip)
             || state.attacks().suspicious(ip, now);
-        boolean captcha = state.admission().captcha(level, state.config().normalCaptcha(), suspicious);
+        boolean captcha = profile.captcha(player.isOnlineMode(), suspicious);
         ConnectionSessions.Session session;
         try {
             UUID connectionId = state.identities().open(player);
@@ -192,7 +204,7 @@ public final class SeleneVelocityPlugin {
             session = opened.session();
             if (opened.replaced() != null) closeReplacedSession(state, opened.replaced());
         } catch (IllegalStateException full) {
-            player.disconnect(text("busy"));
+            player.disconnect(text(player,"busy"));
             return;
         }
         if (player.isOnlineMode() && !captcha) {
@@ -220,7 +232,7 @@ public final class SeleneVelocityPlugin {
         boolean loggedIn = isAuthenticated(event.getPlayer());
         String target = event.getOriginalServer().getServerInfo().getName();
         if (!AuthenticationRoute.mayConnect(loggedIn,target,state.config().authServer())) {
-            event.getPlayer().sendMessage(text("auth-required"));
+            event.getPlayer().sendMessage(text(event.getPlayer(),"auth-required"));
             event.setResult(ServerPreConnectEvent.ServerResult.denied());
         }
     }
@@ -311,6 +323,8 @@ public final class SeleneVelocityPlugin {
         UUID sessionId = state.sessions().get(connection).orElseThrow().id();
         return state.backend().call(bound.get()).thenApply(reply -> {
             if (!state.sessions().isCurrent(connection, sessionId)) return AuthReply.status("EXPIRED", "");
+            if(Set.of("AUTHENTICATED","CAPTCHA_INVALID","INVALID_CREDENTIALS","RATE_LIMITED").contains(reply.status()))
+                state.attacks().observeAuthentication(!reply.status().equals("AUTHENTICATED"),System.currentTimeMillis());
             if (reply.status().equals("AUTHENTICATED")) acceptAuthentication(player.get(), state.sessions().get(connection).orElseThrow(), reply);
             return reply;
         });
@@ -369,7 +383,7 @@ public final class SeleneVelocityPlugin {
         );
         if (outcome == SessionTokenDelivery.Outcome.IGNORED) return;
         if (outcome == SessionTokenDelivery.Outcome.EXHAUSTED) {
-            player.disconnect(text("session-channel-unavailable"));
+            player.disconnect(text(player,"session-channel-unavailable"));
             return;
         }
         proxy.getScheduler().buildTask(this, () -> deliverSessionToken(player, connection, session, attempt + 1))
@@ -392,11 +406,13 @@ public final class SeleneVelocityPlugin {
         AuthRequest snapshot = new AuthRequest(
             "snapshot", UUID.randomUUID().toString(), "system", "127.0.0.1", "", "", false, false);
         state.backend().call(snapshot).thenAccept(reply -> {
-            if (!reply.status().equals("SNAPSHOT")) return;
+            if (!reply.status().equals("SNAPSHOT")) throw new IllegalStateException("Snapshot unavailable");
+            if(!Boolean.TRUE.equals(backendAvailable.getAndSet(true)))logger.info(state.messages().plain("console-backend-ready"));
             state.admission().replaceGreen(reply.green());
             premiumNames = Set.copyOf(new HashSet<>(reply.premiumNames()));
         }).exceptionally(error -> {
-            logger.warn("Selene snapshot refresh failed: {}", error.getClass().getSimpleName());
+            if(!Boolean.FALSE.equals(backendAvailable.getAndSet(false)))logger.warn(state.messages().plain("console-backend-offline"));
+            logger.debug("Snapshot failure details",error);
             return null;
         });
     }
@@ -419,6 +435,13 @@ public final class SeleneVelocityPlugin {
         return state == null ? Component.text("Authentication unavailable") : state.messages().component(key);
     }
 
+    private Component text(Player player, String key) {
+        RuntimeState state=runtime;
+        if(state==null)return Component.text("Authentication unavailable");
+        java.util.Locale locale=player.getPlayerSettings().getLocale();
+        return state.messages().forLocale(locale==null?null:locale.toLanguageTag()).component(key);
+    }
+
     private static AuthRequest boundRequest(
         String operation, ConnectionSessions.Session session, String password, String answer
     ) {
@@ -432,16 +455,47 @@ public final class SeleneVelocityPlugin {
             .findFirst().orElseGet(() -> new ForkCapabilities() {});
     }
 
-    private static AttackLevel currentLevel(RuntimeState state, long now) {
-        if (state.config().forkEnabled()) return state.fork().attackLevel();
-        return state.config().autoAttack() ? state.attacks().level(now) : state.config().attackLevel();
+    private AttackLevel currentLevel(RuntimeState state, long now) {
+        synchronized (state.protection()) {
+            AttackLevel desired = state.config().attackLevel();
+            String source = "конфигурация";
+            String reason = "заданный минимальный уровень";
+            int pending=Math.max(0,state.sessions().size()-authenticated.size());
+            if (state.config().autoAttack()) {
+                var traffic=state.config().forkEnabled()?state.fork().protectionSignals():ru.moonlightproject.dev.selene.core.ProtectionSignals.UNAVAILABLE;
+                AttackLevel detected = state.attacks().level(now,pending,traffic);
+                if (detected.ordinal() >= desired.ordinal()) {
+                    desired = detected; source = "автоматика";
+                    reason = state.attacks().explanation(now);
+                }
+            }
+            if (state.config().forkEnabled()) {
+                AttackLevel detected = state.fork().attackLevel();
+                if (detected.ordinal() >= desired.ordinal()) {
+                    desired = detected; source = "ядро"; reason = "сигнал защиты ядра";
+                }
+            }
+            return state.protection().update(desired, source, reason, now);
+        }
     }
 
-    private void installDefaultConfig(Path file) throws IOException {
-        if (Files.exists(file)) return;
-        try (var source = getClass().getResourceAsStream("/velocity.properties")) {
-            if (source == null) throw new IOException("Bundled Velocity config is missing");
-            Files.copy(source, file);
+    private void protectionCommand(com.velocitypowered.api.command.SimpleCommand.Invocation invocation) {
+        RuntimeState state = runtime;
+        if (state == null) {
+            invocation.source().sendMessage(Component.text("Selene ещё не готова."));
+            return;
+        }
+        synchronized (state.protection()) {
+            currentLevel(state, System.currentTimeMillis());
+            String[] args = invocation.arguments();
+            Component reply;
+            if (args.length == 2 && args[1].equalsIgnoreCase("confirm")) {
+                reply = state.messages().component(state.protection().confirm()?"protection-confirmed":"protection-no-request");
+            } else if (args.length == 2 && args[1].equalsIgnoreCase("status")) {
+                reply = state.messages().component("protection-status",VelocityMessages.literal("current",state.protection().level().name()),
+                    VelocityMessages.literal("pending",Boolean.toString(state.protection().pending())));
+            } else reply=state.messages().component("protection-help");
+            invocation.source().sendMessage(reply);
         }
     }
 
@@ -455,6 +509,7 @@ public final class SeleneVelocityPlugin {
         ConnectionIdentities<Player> identities,
         PremiumLookup premiumLookup,
         RelayServer relay,
-        ForkCapabilities fork
+        ForkCapabilities fork,
+        ProtectionState protection
     ) {}
 }
