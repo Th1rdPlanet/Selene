@@ -30,7 +30,7 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
  private final AuthFlow flow=new AuthFlow();
  private final SecureChatInput secureInput=new SecureChatInput();
  private org.bukkit.configuration.file.YamlConfiguration settings;
- private InventoryProtection inventoryProtection; private AuthGateway gateway; private AccountAdminGateway adminGateway; private AuthMessages messages; private LimboManager limbo; private PlayerPresentation presentation; private int presentationTask=-1; private boolean standalone,captcha,dialogCapable,packetEventsEnabled;
+ private InventoryProtection inventoryProtection; private AuthGateway gateway; private AccountAdminGateway adminGateway; private AuthMessages messages; private LimboManager limbo; private PlayerPresentation presentation; private ResourcePackDelivery resourcePackDelivery; private int presentationTask=-1; private boolean standalone,captcha,dialogCapable,packetEventsEnabled;
  private static final class Session {
   final Player player; final Object inventoryConnection; final AuthSession auth; final PresentationSnapshot snapshot;
   MapView map;
@@ -64,6 +64,8 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
    String pack=settings.getString("resource-pack-provider","NONE");
    if(!Set.of("NONE","Oraxen","ItemsAdder").contains(pack) || (!pack.equals("NONE")&&!getServer().getPluginManager().isPluginEnabled(pack)))throw new IllegalArgumentException("Configured external pack manager '"+pack+"' is unavailable or failed to enable");
    if(captchaView.equals("DIALOG_FONT")&&pack.equals("NONE"))throw new IllegalArgumentException("captcha-view DIALOG_FONT requires resource-pack-provider ItemsAdder or Oraxen");
+   if(settings.getBoolean("captcha.resource-pack.enabled",false))resourcePackDelivery=ResourcePackDelivery.parse(
+    settings.getString("captcha.resource-pack.id",""),settings.getString("captcha.resource-pack.url",""),settings.getString("captcha.resource-pack.sha1",""),settings.getString("captcha.resource-pack.prompt",""));
    if(packetEventsEnabled){inventoryProtection=new PacketEventsInventoryProtection();getLogger().info(messages.plain("console.packets-active",AuthMessages.literal("version",com.github.retrooper.packetevents.PacketEvents.getAPI().getVersion().toString())));}
    else getLogger().info(messages.plain("console.packets-inactive",AuthMessages.literal("role",role),AuthMessages.literal("mode",packetMode)));
    String file=standalone?"standalone.properties":"relay.properties";
@@ -121,6 +123,10 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
   AuthSession auth=flow.open(new ConnectionKey(p.getUniqueId(),p),System.currentTimeMillis()+timeoutMillis);
   PresentationSnapshot snapshot=presentation.begin(p);Session s=new Session(p,connection,auth,snapshot);s.packLoaded=resourcePackStatuses.get(p.getUniqueId());sessions.put(p.getUniqueId(),s);
   applyVisibility(s);limbo.enter(p);presentation.render(p,snapshot,auth.view(),System.currentTimeMillis());
+  if(resourcePackDelivery!=null){
+   var prompt=net.kyori.adventure.text.minimessage.MiniMessage.miniMessage().deserialize(resourcePackDelivery.prompt());
+   p.setResourcePack(resourcePackDelivery.id(),resourcePackDelivery.url(),resourcePackDelivery.sha1(),prompt,true);
+  }
   Bukkit.getScheduler().runTaskLater(this,()->{if(current(s)&&s.auth.view().stage()!=AuthStage.AUTHENTICATED)p.kick(msg(p,"timeout"));},timeoutMillis/50);
   if(standalone){flow.bindToken(s.auth,UUID.randomUUID().toString());request(s,"begin","","");}
  }

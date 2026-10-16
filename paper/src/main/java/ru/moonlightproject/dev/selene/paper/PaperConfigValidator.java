@@ -3,6 +3,7 @@ package ru.moonlightproject.dev.selene.paper;
 import java.util.Map;
 import java.util.Set;
 import java.util.List;
+import java.util.Objects;
 
 final class PaperConfigValidator {
  record Settings(boolean compatibilityPasswordArguments,boolean titleEnabled){}
@@ -24,6 +25,7 @@ final class PaperConfigValidator {
   bool(values,"dialogs.enabled",true);bool(values,"dialogs.fallback-to-chat",true);bool(values,"dialogs.can-close-with-escape",true);bool(values,"dialogs.pause",false);
   bounded(values,"dialogs.callback-lifetime-seconds",1,3600,180);
   Object captchaFont=values.get("captcha.font");if(captchaFont!=null&&(!(captchaFont instanceof String text)||text.isBlank()))throw new IllegalArgumentException("captcha.font must not be empty");bool(values,"captcha.fallback-to-map",true);bounded(values,"captcha.pack-load-timeout-seconds",1,120,15);
+  boolean deliverPack=bool(values,"captcha.resource-pack.enabled",false);if(deliverPack)ResourcePackDelivery.parse(requiredText(values,"captcha.resource-pack.id"),requiredText(values,"captcha.resource-pack.url"),requiredText(values,"captcha.resource-pack.sha1"),Objects.toString(values.getOrDefault("captcha.resource-pack.prompt","")));
   String resourcePackLoading=values.getOrDefault("captcha.resource-pack-loading","MANUAL").toString().toUpperCase(java.util.Locale.ROOT);if(!Set.of("SERVER","MANUAL").contains(resourcePackLoading))throw new IllegalArgumentException("captcha.resource-pack-loading must be SERVER or MANUAL");
   bounded(values,"dialogs.captcha.body-width",1,1024,320);bounded(values,"dialogs.captcha.answer.width",1,1024,220);bool(values,"dialogs.captcha.answer.label-visible",true);bounded(values,"dialogs.captcha.button.width",1,1024,150);
   for(String screen:List.of("captcha","login","register"))DialogButtonPlacement.parse(values.getOrDefault("dialogs."+screen+".button.placement","CONTENT").toString(),"dialogs."+screen+".button.placement");
