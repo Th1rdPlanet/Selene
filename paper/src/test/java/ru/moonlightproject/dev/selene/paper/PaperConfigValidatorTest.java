@@ -36,5 +36,11 @@ class PaperConfigValidatorTest {
  @Test void invalidMiniMessageNamesItsConfigPath(){
   assertTrue(assertThrows(IllegalArgumentException.class,()->new AuthMessages(Map.of("messages.bad","<red>broken"))).getMessage().startsWith("Invalid MiniMessage at messages.bad:"));
  }
+ @Test void validatesDialogButtonPlacement(){
+  Map<String,Object> content=valid();content.put("dialogs.captcha.button.placement","CONTENT");
+  assertDoesNotThrow(()->PaperConfigValidator.validate(content));
+  Map<String,Object> invalid=valid();invalid.put("dialogs.login.button.placement","CENTER");
+  assertTrue(assertThrows(IllegalArgumentException.class,()->PaperConfigValidator.validate(invalid)).getMessage().contains("dialogs.login.button.placement"));
+ }
  private static Map<String,Object> valid(){Map<String,Object> values=new HashMap<>();values.put("role","PROXY_AUTH");values.put("packet-events-mode","AUTO");values.put("stage","BEFORE_JOIN");values.put("captcha-view","MAP");values.put("dialogs.enabled",true);values.put("timeout-seconds",120);values.put("limbo.mode","MANAGED");values.put("limbo.world","selene_limbo");return values;}
 }

@@ -36,7 +36,7 @@ def main() -> None:
     rows = ["".join(chr(0xE000 + digit * VARIANTS + variant) for variant in range(VARIANTS))
             for digit in range(DIGITS)]
     FONT.write_text(json.dumps({"providers": [{"type": "bitmap", "file": "selene:font/captcha.png",
-                                                "ascent": 30, "height": 36, "chars": rows}]},
+                                                "ascent": 25, "height": 30, "chars": rows}]},
                                     ensure_ascii=True, indent=2) + "\n", encoding="utf-8")
 
 

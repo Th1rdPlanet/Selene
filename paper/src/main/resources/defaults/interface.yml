@@ -41,6 +41,8 @@ dialogs:
     button:
       # Ширина кнопки.
       width: 150
+      # CONTENT — кнопка сразу под полем ввода; FOOTER — внизу экрана.
+      placement: "CONTENT"
   login:
     # Максимальная ширина блока описания в пикселях.
     body-width: 320
@@ -54,6 +56,8 @@ dialogs:
     button:
       # Ширина кнопки в пикселях.
       width: 150
+      # CONTENT — кнопка сразу под полем ввода; FOOTER — внизу экрана.
+      placement: "CONTENT"
   register:
     # Максимальная ширина блока описания в пикселях.
     body-width: 320
@@ -74,6 +78,8 @@ dialogs:
     button:
       # Ширина кнопки в пикселях.
       width: 180
+      # CONTENT — кнопка сразу под полями ввода; FOOTER — внизу экрана.
+      placement: "CONTENT"
 # --- Интерфейс авторизации --------------------------------------------------
 # Каждый канал включается отдельно. Во всех текстах работает MiniMessage и
 # плейсхолдер <seconds>. Состояния: connecting, captcha, login, register, processing.

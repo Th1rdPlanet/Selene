@@ -44,7 +44,7 @@ final class AuthDialogs {
   var base=DialogBase.builder(messages.component(path+".title")).externalTitle(messages.component(path+".external-title"))
    .canCloseWithEscape(config.getBoolean("dialogs.can-close-with-escape",true)).pause(config.getBoolean("dialogs.pause",false)).afterAction(DialogBase.DialogAfterAction.CLOSE)
    .body(List.of(DialogBody.plainMessage(body,config.getInt(path+".body-width",320)))).inputs(List.of(answer)).build();
-  player.showDialog(Dialog.create(factory->factory.empty().base(base).type(DialogType.notice(buttonBuilder.build()))));
+  player.showDialog(Dialog.create(factory->factory.empty().base(base).type(buttonType(buttonBuilder.build(),config,path))));
  }
 
  private static io.papermc.paper.registry.data.dialog.input.TextDialogInput input(AuthMessages messages,ConfigurationSection config,String screen,String field){
@@ -59,6 +59,11 @@ final class AuthDialogs {
   String tooltip=messages.template(path+".button.tooltip");if(!tooltip.isEmpty())buttonBuilder.tooltip(messages.component(path+".button.tooltip"));var button=buttonBuilder.build();
   var base=DialogBase.builder(messages.component(path+".title")).externalTitle(messages.component(path+".external-title")).canCloseWithEscape(config.getBoolean("dialogs.can-close-with-escape",true)).pause(config.getBoolean("dialogs.pause",false)).afterAction(DialogBase.DialogAfterAction.CLOSE)
    .body(List.of(DialogBody.plainMessage(messages.component(path+".body"),config.getInt(path+".body-width",300)))).inputs(inputs).build();
-  return Dialog.create(factory->factory.empty().base(base).type(DialogType.notice(button)));
+  return Dialog.create(factory->factory.empty().base(base).type(buttonType(button,config,path)));
+ }
+
+ private static io.papermc.paper.registry.data.dialog.type.DialogType buttonType(ActionButton button,ConfigurationSection config,String path){
+  var placement=DialogButtonPlacement.parse(config.getString(path+".button.placement","CONTENT"),path+".button.placement");
+  return placement==DialogButtonPlacement.CONTENT?DialogType.multiAction(List.of(button)).columns(1).build():DialogType.notice(button);
  }
 }
