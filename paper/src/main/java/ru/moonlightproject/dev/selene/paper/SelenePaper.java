@@ -123,12 +123,15 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
   AuthSession auth=flow.open(new ConnectionKey(p.getUniqueId(),p),System.currentTimeMillis()+timeoutMillis);
   PresentationSnapshot snapshot=presentation.begin(p);Session s=new Session(p,connection,auth,snapshot);s.packLoaded=resourcePackStatuses.get(p.getUniqueId());sessions.put(p.getUniqueId(),s);
   applyVisibility(s);limbo.enter(p);presentation.render(p,snapshot,auth.view(),System.currentTimeMillis());
-  if(resourcePackDelivery!=null){
-   var prompt=net.kyori.adventure.text.minimessage.MiniMessage.miniMessage().deserialize(resourcePackDelivery.prompt());
-   p.setResourcePack(resourcePackDelivery.id(),resourcePackDelivery.url(),resourcePackDelivery.sha1(),prompt,true);
-  }
+  if(resourcePackDelivery!=null)Bukkit.getScheduler().runTask(this,()->sendResourcePack(s));
   Bukkit.getScheduler().runTaskLater(this,()->{if(current(s)&&s.auth.view().stage()!=AuthStage.AUTHENTICATED)p.kick(msg(p,"timeout"));},timeoutMillis/50);
   if(standalone){flow.bindToken(s.auth,UUID.randomUUID().toString());request(s,"begin","","");}
+ }
+ private void sendResourcePack(Session s){
+  if(!current(s)||resourcePackDelivery==null)return;
+  var prompt=net.kyori.adventure.text.minimessage.MiniMessage.miniMessage().deserialize(resourcePackDelivery.prompt());
+  s.player.setResourcePack(resourcePackDelivery.id(),resourcePackDelivery.url(),resourcePackDelivery.sha1(),prompt,true);
+  getLogger().info("Обязательный resource pack отправлен игроку "+s.player.getName()+".");
  }
  @Override public void onPluginMessageReceived(String channel,Player p,byte[] message){
   if(standalone||!channel.equals(SESSION_CHANNEL)||message.length!=16)return;
@@ -215,7 +218,7 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
   request(s,name,args[0],"");return true;
  }
  @EventHandler public void quit(PlayerQuitEvent e){secureInput.clear(e.getPlayer().getUniqueId());resourcePackStatuses.remove(e.getPlayer().getUniqueId());Session s=sessions.get(e.getPlayer().getUniqueId());if(s!=null&&s.player==e.getPlayer()&&sessions.remove(e.getPlayer().getUniqueId(),s)){if(packetEventsEnabled)inventoryProtection.close(s.inventoryConnection);presentation.restore(s.player,s.snapshot);restoreVisibility(s);releaseMap(s);gateway.call(dto(s,"close","",""));flow.close(s.auth);}}
- @EventHandler public void resourcePackStatus(PlayerResourcePackStatusEvent e){Boolean loaded=switch(e.getStatus()){case SUCCESSFULLY_LOADED -> true;case DECLINED,FAILED_DOWNLOAD,INVALID_URL,FAILED_RELOAD,DISCARDED -> false;default -> null;};if(loaded==null)return;resourcePackStatuses.put(e.getPlayer().getUniqueId(),loaded);Session s=sessions.get(e.getPlayer().getUniqueId());if(s==null)return;s.packLoaded=loaded;if(loaded&&settings.getString("captcha.resource-pack-loading","MANUAL").equalsIgnoreCase("SERVER")&&s.auth.view().stage()==AuthStage.WAITING_FOR_CAPTCHA)showCaptcha(s);}
+ @EventHandler public void resourcePackStatus(PlayerResourcePackStatusEvent e){getLogger().info("Resource pack • игрок: "+e.getPlayer().getName()+" • статус: "+e.getStatus());Boolean loaded=switch(e.getStatus()){case SUCCESSFULLY_LOADED -> true;case DECLINED,FAILED_DOWNLOAD,INVALID_URL,FAILED_RELOAD,DISCARDED -> false;default -> null;};if(loaded==null)return;resourcePackStatuses.put(e.getPlayer().getUniqueId(),loaded);Session s=sessions.get(e.getPlayer().getUniqueId());if(s==null)return;s.packLoaded=loaded;if(loaded&&settings.getString("captcha.resource-pack-loading","MANUAL").equalsIgnoreCase("SERVER")&&s.auth.view().stage()==AuthStage.WAITING_FOR_CAPTCHA)showCaptcha(s);}
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void move(PlayerMoveEvent e){Location from=e.getFrom(),to=e.getTo();if(locked(e.getPlayer())&&to!=null&&Countdown.movementChanged(from.getX(),from.getY(),from.getZ(),from.getYaw(),from.getPitch(),to.getX(),to.getY(),to.getZ(),to.getYaw(),to.getPitch()))e.setTo(from);}
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void teleport(PlayerTeleportEvent e){if(locked(e.getPlayer())&&e.getCause()!=PlayerTeleportEvent.TeleportCause.PLUGIN)e.setCancelled(true);}
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void command(PlayerCommandPreprocessEvent e){if(locked(e.getPlayer())){String c=e.getMessage().split(" ",2)[0].substring(1);if(!PacketPolicy.allowCommand(c)){e.setCancelled(true);e.getPlayer().sendMessage(msg(e.getPlayer(),"blocked"));}}}
