@@ -27,9 +27,9 @@ interactive-captcha:
     scoreboard: true
   platform:
     # Ширина пола в блоках.
-    width: 10
+    width: 16
     # Длина пола в блоках.
-    length: 10
+    length: 16
     # SOLID, RANDOM или CHECKERBOARD.
     floor-pattern: "RANDOM"
     # При RANDOM каждый блок пола независимо выбирается из списка.
@@ -38,13 +38,24 @@ interactive-captcha:
       - ANDESITE
     # Невидимая граница, не позволяющая уйти на соседнюю арену.
     boundary-material: BARRIER
+    decoration:
+      # Добавлять бордюр, ограждение с проходами и четыре световые стойки.
+      enabled: true
+      # Материал контрастного бордюра платформы.
+      border-material: POLISHED_ANDESITE
+      # Материал невысокого ограждения по краям.
+      railing-material: STONE_BRICK_WALL
+      # Основание угловых световых стоек.
+      lamp-base-material: CHISELED_STONE_BRICKS
+      # Светящийся блок наверху стойки.
+      light-material: SEA_LANTERN
   generation:
     # Максимум попыток подобрать непересекающиеся случайные позиции.
     attempts: 32
     # Минимальный отступ цели от края платформы.
-    min-target-distance: 3
+    min-target-distance: 4
     # Число безопасных отвлекающих блоков.
-    decoys: 3
+    decoys: 5
   scenarios:
     # weight задаёт относительную частоту сценария; все позиции всегда случайны.
     # target-material и challenge-item используют стандартные имена Bukkit Material.

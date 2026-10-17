@@ -8,7 +8,8 @@ public record InteractiveCaptchaConfig(String world,int timeoutSeconds,int maxMi
  public enum FloorPattern { SOLID,RANDOM,CHECKERBOARD }
  public record Isolation(boolean hidePlayers,boolean hideTabList,boolean hideNameTags,boolean suppressChat){}
  public record Display(boolean title,boolean actionbar,boolean scoreboard){}
- public record Platform(int width,int length,FloorPattern floorPattern,List<String> floorMaterials,String boundaryMaterial){}
+ public record Decoration(boolean enabled,String borderMaterial,String railingMaterial,String lampBaseMaterial,String lightMaterial){}
+ public record Platform(int width,int length,FloorPattern floorPattern,List<String> floorMaterials,String boundaryMaterial,Decoration decoration){}
  public record Generation(int attempts,int minTargetDistance,int decoys){}
  public record ScenarioConfig(boolean enabled,int weight,String targetMaterial,String challengeItem){
   public ScenarioConfig(boolean enabled,int weight){this(enabled,weight,"","");}
@@ -26,6 +27,11 @@ public record InteractiveCaptchaConfig(String world,int timeoutSeconds,int maxMi
   if(names.isEmpty())throw bad("platform.floor-materials","must contain at least one material");
   List<String> floor=names.stream().map(name->material("platform.floor-materials",name)).toList();
   String boundary=material("platform.boundary-material",text(root,"platform.boundary-material"));
+  Decoration decoration=new Decoration(root.getBoolean("platform.decoration.enabled",true),
+      material("platform.decoration.border-material",root.getString("platform.decoration.border-material","POLISHED_ANDESITE")),
+      material("platform.decoration.railing-material",root.getString("platform.decoration.railing-material","STONE_BRICK_WALL")),
+      material("platform.decoration.lamp-base-material",root.getString("platform.decoration.lamp-base-material","CHISELED_STONE_BRICKS")),
+      material("platform.decoration.light-material",root.getString("platform.decoration.light-material","SEA_LANTERN")));
   Generation generation=new Generation(bounded(root,"generation.attempts",1,128),
       bounded(root,"generation.min-target-distance",1,30),bounded(root,"generation.decoys",0,32));
   ConfigurationSection section=root.getConfigurationSection("scenarios");
@@ -44,7 +50,7 @@ public record InteractiveCaptchaConfig(String world,int timeoutSeconds,int maxMi
       new Isolation(root.getBoolean("isolation.hide-players",true),root.getBoolean("isolation.hide-tab-list",true),
           root.getBoolean("isolation.hide-name-tags",true),root.getBoolean("isolation.suppress-chat",true)),
       new Display(root.getBoolean("display.title",false),root.getBoolean("display.actionbar",true),root.getBoolean("display.scoreboard",true)),
-      new Platform(width,length,pattern,List.copyOf(floor),boundary),generation,Map.copyOf(scenarios));
+      new Platform(width,length,pattern,List.copyOf(floor),boundary,decoration),generation,Map.copyOf(scenarios));
  }
  private static String material(String path,String name){
   String material=name.trim().toUpperCase(Locale.ROOT);

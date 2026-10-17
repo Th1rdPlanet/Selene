@@ -13,8 +13,9 @@ class InteractiveCaptchaConfigTest {
    assertNotNull(in);yaml.loadFromString(new String(in.readAllBytes(),StandardCharsets.UTF_8));
   }
   InteractiveCaptchaConfig config=InteractiveCaptchaConfig.parse(yaml.getConfigurationSection("interactive-captcha"));
-  assertEquals(10,config.platform().width());assertEquals(InteractiveCaptchaConfig.FloorPattern.RANDOM,config.platform().floorPattern());
+  assertEquals(16,config.platform().width());assertEquals(InteractiveCaptchaConfig.FloorPattern.RANDOM,config.platform().floorPattern());
   assertEquals(2,config.platform().floorMaterials().size());assertEquals(9,config.scenarios().size());
+  assertTrue(config.platform().decoration().enabled());assertEquals("POLISHED_ANDESITE",config.platform().decoration().borderMaterial());
   assertThrows(UnsupportedOperationException.class,()->config.scenarios().clear());
  }
  @Test void invalidBoundsAndUnsafeMaterialsNameFullPath(){
