@@ -37,6 +37,7 @@ pub struct Policy {
 #[serde(default, deny_unknown_fields)]
 pub struct TotpPolicy {
     pub issuer: String,
+    pub account_label: String,
     pub period_seconds: u64,
     pub accepted_window: u64,
     pub setup_seconds: u64,
@@ -49,6 +50,7 @@ impl Default for TotpPolicy {
     fn default() -> Self {
         Self {
             issuer: "Selene".into(),
+            account_label: "{username}".into(),
             period_seconds: 30,
             accepted_window: 1,
             setup_seconds: 300,
@@ -155,8 +157,9 @@ impl Service {
                 && totp_policy.snapshot_capacity > 0,
             "invalid TOTP policy limits"
         );
-        let engine = TotpEngine::new(
+        let engine = TotpEngine::with_account_label(
             &totp_policy.issuer,
+            &totp_policy.account_label,
             totp_policy.period_seconds,
             totp_policy.accepted_window,
         )?;

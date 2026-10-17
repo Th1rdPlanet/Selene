@@ -45,15 +45,30 @@ const URI_COMPONENT: &AsciiSet = &CONTROLS
 
 pub(crate) struct TotpEngine {
     issuer: String,
+    account_label: String,
     period: u64,
     window: u64,
 }
 
 impl TotpEngine {
+    #[cfg(test)]
     pub(crate) fn new(issuer: &str, period: u64, window: u64) -> anyhow::Result<Self> {
+        Self::with_account_label(issuer, "{username}", period, window)
+    }
+
+    pub(crate) fn with_account_label(
+        issuer: &str,
+        account_label: &str,
+        period: u64,
+        window: u64,
+    ) -> anyhow::Result<Self> {
         ensure!(
             !issuer.trim().is_empty() && issuer.len() <= 64,
             "invalid TOTP issuer"
+        );
+        ensure!(
+            account_label.contains("{username}") && account_label.len() <= 128,
+            "invalid TOTP account label template"
         );
         ensure!(
             (15..=120).contains(&period) && window <= 5,
@@ -61,6 +76,7 @@ impl TotpEngine {
         );
         Ok(Self {
             issuer: issuer.to_owned(),
+            account_label: account_label.to_owned(),
             period,
             window,
         })
@@ -109,8 +125,10 @@ impl TotpEngine {
             "invalid TOTP provisioning data"
         );
         let issuer = utf8_percent_encode(&self.issuer, URI_COMPONENT).to_string();
-        let label =
-            utf8_percent_encode(&format!("{}:{account}", self.issuer), URI_COMPONENT).to_string();
+        let account_label = self.account_label.replace("{username}", account);
+        ensure!(account_label.len() <= 192, "invalid TOTP account label");
+        let label = utf8_percent_encode(&format!("{}:{account_label}", self.issuer), URI_COMPONENT)
+            .to_string();
         Ok(format!(
             "otpauth://totp/{label}?secret={}&issuer={issuer}&algorithm=SHA1&digits=6&period={}",
             BASE32_NOPAD.encode(secret),

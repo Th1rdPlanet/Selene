@@ -23,15 +23,25 @@ fn verification_accepts_adjacent_steps_and_rejects_replay() {
 
 #[test]
 fn provisioning_uri_escapes_labels_and_uses_unpadded_base32() {
-    let engine = TotpEngine::new("Selene Auth", 30, 1).unwrap();
+    let engine =
+        TotpEngine::with_account_label("MoonLight Network", "Minecraft • {username}", 30, 1)
+            .unwrap();
     let uri = engine
         .provisioning_uri("Vic Tim", b"hello!\xde\xad")
         .unwrap();
     assert_eq!(
         uri,
-        "otpauth://totp/Selene%20Auth%3AVic%20Tim?secret=NBSWY3DPEHPK2&issuer=Selene%20Auth&algorithm=SHA1&digits=6&period=30"
+        "otpauth://totp/MoonLight%20Network%3AMinecraft%20%E2%80%A2%20Vic%20Tim?secret=NBSWY3DPEHPK2&issuer=MoonLight%20Network&algorithm=SHA1&digits=6&period=30"
     );
     assert!(!uri.contains("secret=NBSWY3DPEHPK2="));
+}
+
+#[test]
+fn account_label_template_requires_the_username_placeholder() {
+    assert!(TotpEngine::with_account_label("Selene", "Minecraft", 30, 1).is_err());
+    assert!(
+        TotpEngine::with_account_label("Selene", "{username}".repeat(40).as_str(), 30, 1).is_err()
+    );
 }
 
 #[test]

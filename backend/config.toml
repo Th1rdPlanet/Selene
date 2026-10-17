@@ -32,7 +32,10 @@ banner = true
 enabled = true
 # Имя переменной окружения с Base64-ключом ровно из 32 байт. Сам ключ сюда не записывается.
 master_key_env = "SELENE_TOTP_MASTER_KEY"
+# Название сервиса в Authenticator. Обычно показывается крупной строкой.
 issuer = "Selene"
+# Подпись конкретного аккаунта. {username} заменяется игровым ником.
+account_label = "Minecraft • {username}"
 period_seconds = 30
 accepted_window = 1
 setup_seconds = 300
