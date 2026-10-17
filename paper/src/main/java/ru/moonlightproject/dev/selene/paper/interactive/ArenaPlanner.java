@@ -17,12 +17,15 @@ public final class ArenaPlanner {
   int total=enabled.stream().mapToInt(e->e.getValue().weight()).sum(),roll=random.nextInt(total);String selected=enabled.getFirst().getKey();
   for(var entry:enabled){roll-=entry.getValue().weight();if(roll<0){selected=entry.getKey();break;}}
   ScenarioType type=ScenarioType.fromConfig(selected);
+  InteractiveCaptchaConfig.ScenarioConfig scenario=config.scenarios().get(selected);
   ArenaPlan.Point target=point(random,platform.width(),platform.length(),config.generation().minTargetDistance());
   List<ArenaPlan.Point> decoys=new ArrayList<>();Set<ArenaPlan.Point> occupied=new HashSet<>();occupied.add(target);
   int limit=config.generation().attempts()*Math.max(1,config.generation().decoys());
   for(int i=0;decoys.size()<config.generation().decoys()&&i<limit;i++){ArenaPlan.Point p=point(random,platform.width(),platform.length(),1);if(occupied.add(p))decoys.add(p);}
   if(decoys.size()<config.generation().decoys())throw new GenerationFailure("not enough collision-free cells");
-  return new ArenaPlan(platform.width(),platform.length(),floor,type,target,decoys,targetMaterial(type),challengeItem(type));
+  String targetMaterial=scenario.targetMaterial().isBlank()?targetMaterial(type):scenario.targetMaterial();
+  String challengeItem=scenario.challengeItem().isBlank()?challengeItem(type):scenario.challengeItem();
+  return new ArenaPlan(platform.width(),platform.length(),floor,type,target,decoys,targetMaterial,challengeItem);
  }
  private static ArenaPlan.Point point(SplittableRandom random,int width,int length,int minimum){
   int margin=Math.min(Math.max(1,minimum),Math.max(1,Math.min(width,length)/2-1));

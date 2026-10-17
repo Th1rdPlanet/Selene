@@ -9,7 +9,9 @@ public record InteractiveCaptchaConfig(String world,int timeoutSeconds,int maxMi
  public record Isolation(boolean hidePlayers,boolean hideTabList,boolean hideNameTags,boolean suppressChat){}
  public record Platform(int width,int length,FloorPattern floorPattern,List<String> floorMaterials,String boundaryMaterial){}
  public record Generation(int attempts,int minTargetDistance,int decoys){}
- public record ScenarioConfig(boolean enabled,int weight){}
+ public record ScenarioConfig(boolean enabled,int weight,String targetMaterial,String challengeItem){
+  public ScenarioConfig(boolean enabled,int weight){this(enabled,weight,"","");}
+ }
 
  public static InteractiveCaptchaConfig parse(ConfigurationSection root){
   if(root==null)throw new IllegalArgumentException("Missing Paper setting: interactive-captcha");
@@ -30,7 +32,10 @@ public record InteractiveCaptchaConfig(String world,int timeoutSeconds,int maxMi
   Map<String,ScenarioConfig> scenarios=new LinkedHashMap<>();
   for(String key:section.getKeys(false)){
    boolean enabled=section.getBoolean(key+".enabled",true);int weight=bounded(section,key+".weight",1,100);
-   scenarios.put(key,new ScenarioConfig(enabled,weight));
+   String target=section.getString(key+".target-material","").trim().toUpperCase(Locale.ROOT);
+   String item=section.getString(key+".challenge-item","").trim().toUpperCase(Locale.ROOT);
+   if(target.isEmpty())target=defaultTarget(key);if(!target.matches("[A-Z0-9_]+"))throw bad("scenarios."+key+".target-material","is invalid");if(!item.isEmpty()&&!item.matches("[A-Z0-9_]+"))throw bad("scenarios."+key+".challenge-item","is invalid");
+   scenarios.put(key,new ScenarioConfig(enabled,weight,target,item));
   }
   if(scenarios.values().stream().noneMatch(ScenarioConfig::enabled))throw bad("scenarios","must enable at least one scenario");
   return new InteractiveCaptchaConfig(world,timeout,mistakes,spacing,
@@ -52,4 +57,5 @@ public record InteractiveCaptchaConfig(String world,int timeoutSeconds,int maxMi
  private static String text(ConfigurationSection root,String path){String value=root.getString(path);if(value==null||value.isBlank())throw bad(path,"must not be empty");return value.trim();}
  private static int bounded(ConfigurationSection root,String path,int min,int max){int value=root.getInt(path,Integer.MIN_VALUE);if(value<min||value>max)throw bad(path,"must be between "+min+" and "+max);return value;}
  private static IllegalArgumentException bad(String path,String message){return new IllegalArgumentException("interactive-captcha."+path+" "+message);}
+ private static String defaultTarget(String key){return switch(key){case "break-block"->"COAL_ORE";case "chop-tree"->"OAK_LOG";case "take-from-chest","put-in-chest"->"CHEST";case "armor-stand"->"ARMOR_STAND";case "press-button"->"STONE_BUTTON";case "toggle-lever"->"LEVER";case "stand-on-block"->"GOLD_BLOCK";case "item-frame"->"ITEM_FRAME";default->throw bad("scenarios."+key,"is unknown");};}
 }

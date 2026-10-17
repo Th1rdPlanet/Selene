@@ -24,12 +24,13 @@ interactive-captcha:
     min-target-distance: 3
     decoys: 3
   scenarios:
-    break-block: { enabled: true, weight: 10 }
-    chop-tree: { enabled: true, weight: 8 }
-    take-from-chest: { enabled: true, weight: 8 }
-    armor-stand: { enabled: true, weight: 6 }
-    press-button: { enabled: true, weight: 8 }
-    toggle-lever: { enabled: true, weight: 8 }
-    stand-on-block: { enabled: true, weight: 10 }
-    put-in-chest: { enabled: true, weight: 7 }
-    item-frame: { enabled: true, weight: 6 }
+    # weight задаёт относительную частоту сценария; все позиции всегда случайны.
+    break-block: { enabled: true, weight: 10, target-material: COAL_ORE }
+    chop-tree: { enabled: true, weight: 8, target-material: OAK_LOG }
+    take-from-chest: { enabled: true, weight: 8, target-material: CHEST, challenge-item: EMERALD }
+    armor-stand: { enabled: true, weight: 6, target-material: ARMOR_STAND, challenge-item: IRON_CHESTPLATE }
+    press-button: { enabled: true, weight: 8, target-material: STONE_BUTTON }
+    toggle-lever: { enabled: true, weight: 8, target-material: LEVER }
+    stand-on-block: { enabled: true, weight: 10, target-material: GOLD_BLOCK }
+    put-in-chest: { enabled: true, weight: 7, target-material: CHEST, challenge-item: EMERALD }
+    item-frame: { enabled: true, weight: 6, target-material: ITEM_FRAME, challenge-item: EMERALD }
