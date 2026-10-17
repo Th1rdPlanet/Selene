@@ -1,30 +1,46 @@
 # Selene / Paper — interactive-captcha.yml
 # Используется только при captcha-view: INTERACTIVE.
 interactive-captcha:
+  # Имя отдельного void-мира. Не используйте здесь selene_limbo или игровой мир.
   world: "selene_interactive"
+  # Общее время на испытание; после него действует обычный timeout авторизации.
   timeout-seconds: 120
+  # После скольких ошибок перестроить расположение объектов.
   max-mistakes: 2
+  # Расстояние между началами приватных арен одного мира.
   arena-spacing: 64
   isolation:
+    # Полностью скрывать проходящих CAPTCHA игроков друг от друга.
     hide-players: true
+    # Убирать других проходящих CAPTCHA игроков из TAB.
     hide-tab-list: true
+    # Не показывать подписи имён над игроками.
     hide-name-tags: true
+    # Не публиковать сообщения игрока во время CAPTCHA.
     suppress-chat: true
   platform:
+    # Ширина пола в блоках.
     width: 10
+    # Длина пола в блоках.
     length: 10
+    # SOLID, RANDOM или CHECKERBOARD.
     floor-pattern: "RANDOM"
     # При RANDOM каждый блок пола независимо выбирается из списка.
     floor-materials:
       - STONE
       - ANDESITE
+    # Невидимая граница, не позволяющая уйти на соседнюю арену.
     boundary-material: BARRIER
   generation:
+    # Максимум попыток подобрать непересекающиеся случайные позиции.
     attempts: 32
+    # Минимальный отступ цели от края платформы.
     min-target-distance: 3
+    # Число безопасных отвлекающих блоков.
     decoys: 3
   scenarios:
     # weight задаёт относительную частоту сценария; все позиции всегда случайны.
+    # target-material и challenge-item используют стандартные имена Bukkit Material.
     break-block: { enabled: true, weight: 10, target-material: COAL_ORE }
     chop-tree: { enabled: true, weight: 8, target-material: OAK_LOG }
     take-from-chest: { enabled: true, weight: 8, target-material: CHEST, challenge-item: EMERALD }

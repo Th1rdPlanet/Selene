@@ -31,6 +31,7 @@ public record InteractiveCaptchaConfig(String world,int timeoutSeconds,int maxMi
   if(section==null)throw new IllegalArgumentException("Missing Paper setting: interactive-captcha.scenarios");
   Map<String,ScenarioConfig> scenarios=new LinkedHashMap<>();
   for(String key:section.getKeys(false)){
+   if(!Set.of("break-block","chop-tree","take-from-chest","armor-stand","press-button","toggle-lever","stand-on-block","put-in-chest","item-frame").contains(key))throw bad("scenarios."+key,"is unknown");
    boolean enabled=section.getBoolean(key+".enabled",true);int weight=bounded(section,key+".weight",1,100);
    String target=section.getString(key+".target-material","").trim().toUpperCase(Locale.ROOT);
    String item=section.getString(key+".challenge-item","").trim().toUpperCase(Locale.ROOT);
