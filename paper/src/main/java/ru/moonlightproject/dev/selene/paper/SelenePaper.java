@@ -92,7 +92,7 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
    }
    for(String command:List.of("login","register")){getCommand(command).setExecutor(this);getCommand(command).setTabCompleter((s,c,a,args)->List.of());}
    getCommand("selene").setExecutor(new AccountAdminCommand(this,standalone,adminGateway,messages));getCommand("selene").setTabCompleter((s,c,a,args)->List.of());
-   presentationTask=Bukkit.getScheduler().scheduleSyncRepeatingTask(this,()->{long now=System.currentTimeMillis();for(Session session:sessions.values())if(current(session)&&session.auth.view().stage()!=AuthStage.AUTHENTICATED)presentation.render(session.player,session.snapshot,session.auth.view(),now);},20,20);
+   presentationTask=Bukkit.getScheduler().scheduleSyncRepeatingTask(this,()->{long now=System.currentTimeMillis();for(Session session:sessions.values())if(current(session)&&session.auth.view().stage()!=AuthStage.AUTHENTICATED){presentation.render(session.player,session.snapshot,session.auth.view(),now);if(interactiveCaptcha!=null&&interactiveCaptcha.active(session.player))interactiveCaptcha.render(session.player,Countdown.secondsRemaining(now,session.auth.view().deadlineMillis()));}},20,20);
    getLogger().info(messages.plain("console.ready",AuthMessages.literal("role",role),AuthMessages.literal("stage",stage),AuthMessages.literal("world",settings.getString("limbo.world")),AuthMessages.literal("dialogs",Boolean.toString(dialogCapable))));
    // Reload is unsupported: no existing connection may inherit authentication.
    for(Player p:Bukkit.getOnlinePlayers())p.kick(msg(p,"unavailable"));
