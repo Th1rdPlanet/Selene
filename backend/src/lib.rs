@@ -66,3 +66,6 @@ pub mod service;
 mod storage;
 #[cfg(test)]
 mod tests;
+pub(crate) mod totp;
+#[cfg(test)]
+mod totp_tests;
