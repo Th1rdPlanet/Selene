@@ -4,9 +4,10 @@ import java.util.*;
 import org.bukkit.configuration.ConfigurationSection;
 
 public record InteractiveCaptchaConfig(String world,int timeoutSeconds,int maxMistakes,int arenaSpacing,
-    Isolation isolation,Platform platform,Generation generation,Map<String,ScenarioConfig> scenarios) {
+    Isolation isolation,Display display,Platform platform,Generation generation,Map<String,ScenarioConfig> scenarios) {
  public enum FloorPattern { SOLID,RANDOM,CHECKERBOARD }
  public record Isolation(boolean hidePlayers,boolean hideTabList,boolean hideNameTags,boolean suppressChat){}
+ public record Display(boolean title,boolean actionbar,boolean scoreboard){}
  public record Platform(int width,int length,FloorPattern floorPattern,List<String> floorMaterials,String boundaryMaterial){}
  public record Generation(int attempts,int minTargetDistance,int decoys){}
  public record ScenarioConfig(boolean enabled,int weight,String targetMaterial,String challengeItem){
@@ -42,6 +43,7 @@ public record InteractiveCaptchaConfig(String world,int timeoutSeconds,int maxMi
   return new InteractiveCaptchaConfig(world,timeout,mistakes,spacing,
       new Isolation(root.getBoolean("isolation.hide-players",true),root.getBoolean("isolation.hide-tab-list",true),
           root.getBoolean("isolation.hide-name-tags",true),root.getBoolean("isolation.suppress-chat",true)),
+      new Display(root.getBoolean("display.title",false),root.getBoolean("display.actionbar",true),root.getBoolean("display.scoreboard",true)),
       new Platform(width,length,pattern,List.copyOf(floor),boundary),generation,Map.copyOf(scenarios));
  }
  private static String material(String path,String name){

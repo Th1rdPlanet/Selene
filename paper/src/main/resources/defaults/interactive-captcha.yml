@@ -18,6 +18,13 @@ interactive-captcha:
     hide-name-tags: true
     # Не публиковать сообщения игрока во время CAPTCHA.
     suppress-chat: true
+  display:
+    # Крупный title по центру экрана. По умолчанию выключен, чтобы не закрывать арену.
+    title: false
+    # Короткая инструкция и таймер над хотбаром.
+    actionbar: true
+    # Задание и оставшееся время в боковой панели.
+    scoreboard: true
   platform:
     # Ширина пола в блоках.
     width: 10
