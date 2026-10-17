@@ -7,6 +7,7 @@ import io.papermc.paper.registry.data.dialog.body.DialogBody;
 import io.papermc.paper.registry.data.dialog.input.DialogInput;
 import io.papermc.paper.registry.data.dialog.type.DialogType;
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.key.Key;
 import net.kyori.adventure.text.event.ClickCallback;
 import org.bukkit.entity.Player;
@@ -59,7 +60,8 @@ final class AuthDialogs {
   String path="dialogs.totp-setup";
   Component body=messages.component(path+".body-before");
   if(!presentation.qrGlyphs().isEmpty())body=body.append(Component.newline())
-   .append(Component.text(presentation.qrGlyphs()).font(Key.key(config.getString("dialogs.totp-setup.qr-font","selene:qr"))));
+   .append(Component.text(presentation.qrGlyphs()).color(NamedTextColor.BLACK)
+    .font(Key.key(config.getString("dialogs.totp-setup.qr-font","selene:qr"))));
   body=body.append(Component.newline()).append(messages.component(path+".manual-label"))
    .append(Component.newline()).append(Component.text(presentation.manualSecret()));
   var code=input(messages,config,"totp-setup","code");

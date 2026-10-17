@@ -12,7 +12,7 @@ FONT = ROOT / "font" / "captcha.json"
 # dialog at every supported GUI scale. Minecraft derives the advance from
 # the atlas cell width, so transparent padding here also becomes visible
 # spacing between digits.
-CELL_W, CELL_H, VARIANTS, DIGITS = 12, 18, 16, 10
+CELL_W, CELL_H, VARIANTS, DIGITS = 12, 18, 64, 10
 
 
 def main() -> None:

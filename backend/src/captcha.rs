@@ -5,6 +5,16 @@ pub struct Challenge {
     pub image: String,
     pub glyphs: String,
 }
+impl std::fmt::Debug for Challenge {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("Challenge")
+            .field("answer", &"<redacted>")
+            .field("image_bytes", &self.image.len())
+            .field("glyph_count", &self.glyphs.chars().count())
+            .finish()
+    }
+}
 pub fn generate() -> Challenge {
     let glyphs: [[&str; 7]; 10] = [
         [
@@ -42,13 +52,13 @@ pub fn generate() -> Challenge {
     let answer: String = (0..5)
         .map(|_| char::from(b'0' + rng.gen_range(0..10)))
         .collect();
-    // Each decimal digit has sixteen visually different glyphs in the Selene pack.
+    // Each decimal digit has sixty-four visually different glyphs in the Selene pack.
     // The codepoints reveal neither the answer in logs nor to ordinary fonts.
     let captcha_glyphs: String = answer
         .bytes()
         .map(|digit| {
-            let variant = rng.gen_range(0..16) as u32;
-            char::from_u32(0xE000 + u32::from(digit - b'0') * 16 + variant).unwrap()
+            let variant = rng.gen_range(0..64) as u32;
+            char::from_u32(0xE000 + u32::from(digit - b'0') * 64 + variant).unwrap()
         })
         .collect();
     let mut pixels = vec![236u8; 128 * 128 * 3];
@@ -90,5 +100,32 @@ pub fn generate() -> Challenge {
         answer,
         image: base64::engine::general_purpose::STANDARD.encode(output),
         glyphs: captcha_glyphs,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    #[test]
+    fn glyphs_use_five_digits_and_sixty_four_variant_bands() {
+        let mut variants = HashSet::new();
+        for _ in 0..128 {
+            let challenge = generate();
+            assert_eq!(challenge.answer.len(), 5);
+            assert_eq!(challenge.glyphs.chars().count(), 5);
+            for (digit, glyph) in challenge.answer.bytes().zip(challenge.glyphs.chars()) {
+                let offset = glyph as u32 - 0xE000;
+                assert_eq!(offset / 64, u32::from(digit - b'0'));
+                assert!(offset % 64 < 64);
+                variants.insert(offset % 64);
+            }
+            assert!(!format!("{challenge:?}").contains(&challenge.answer));
+        }
+        assert!(
+            variants.len() > 32,
+            "variant selection lacks expected entropy"
+        );
     }
 }

@@ -54,7 +54,7 @@ async fn captcha_cannot_be_bypassed_or_reset_by_begin() {
         first
             .captcha_glyphs
             .chars()
-            .all(|c| ('\u{e000}'..='\u{e09f}').contains(&c))
+            .all(|c| ('\u{e000}'..='\u{e27f}').contains(&c))
     );
     r.op = "register".into();
     assert_eq!(s.handle(r.clone()).await.status, "INVALID_REQUEST");
