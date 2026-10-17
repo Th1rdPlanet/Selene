@@ -28,5 +28,9 @@ final class AuthInputValidation {
   return value.matches("[0-9]{5}")?ValidationResult.success():ValidationResult.error("captcha-format");
  }
 
+ static ValidationResult totp(String value){
+  return value!=null&&value.matches("[0-9]{6}")?ValidationResult.success():ValidationResult.error("totp-format");
+ }
+
  static String messageKeyForStatus(String status){return USER_STATUSES.contains(status)?status:null;}
 }

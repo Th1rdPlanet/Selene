@@ -66,6 +66,39 @@ class AuthFlowTest {
   assertEquals(AuthStage.AUTHENTICATED,session.view().stage());
  }
 
+ @Test void passwordSuccessCanRequireTotpBeforeAuthentication(){
+  AuthFlow flow=new AuthFlow();AuthSession session=atLogin(flow);
+  assertTrue(flow.submitLogin(session,"12345678"));
+  assertTrue(flow.accept(session,"token",AuthReply.status("TOTP_REQUIRED","token"),NOW));
+  assertEquals(AuthStage.WAITING_FOR_TOTP,session.view().stage());
+  assertTrue(flow.submitTotp(session,"123456"));
+  assertTrue(flow.accept(session,"token",AuthReply.status("AUTHENTICATED","token"),NOW));
+  assertEquals(AuthStage.AUTHENTICATED,session.view().stage());
+ }
+
+ @Test void invalidTotpReturnsToSecondFactorInput(){
+  AuthFlow flow=new AuthFlow();AuthSession session=atTotp(flow);
+  assertTrue(flow.submitTotp(session,"123456"));
+  assertTrue(flow.accept(session,"token",AuthReply.status("TOTP_INVALID","token"),NOW));
+  assertEquals(AuthStage.WAITING_FOR_TOTP,session.view().stage());
+  assertFalse(session.view().busy());
+ }
+
+ @Test void captchaSubmissionCannotUnexpectedlyEnterTotpStage(){
+  AuthFlow flow=new AuthFlow();AuthSession session=bound(flow);
+  assertTrue(flow.accept(session,"token",AuthReply.status("CAPTCHA","token"),NOW));
+  assertTrue(flow.submitCaptcha(session,"12345"));
+  assertFalse(flow.accept(session,"token",AuthReply.status("TOTP_REQUIRED","token"),NOW));
+  assertEquals(AuthStage.SUBMITTING,session.view().stage());
+ }
+
+ @Test void malformedTotpIsRejectedBeforeSubmission(){
+  AuthFlow flow=new AuthFlow();AuthSession session=atTotp(flow);
+  assertFalse(flow.submitTotp(session,"12345"));
+  assertFalse(flow.submitTotp(session,"12345a"));
+  assertEquals(AuthStage.WAITING_FOR_TOTP,session.view().stage());
+ }
+
  @Test void reconnectReplacesSessionAndRejectsOldCompletion(){
   AuthFlow flow=new AuthFlow();UUID playerId=UUID.randomUUID();
   AuthSession old=flow.open(new ConnectionKey(playerId,new Object()),NOW+10_000);flow.bindToken(old,"old");
@@ -77,4 +110,5 @@ class AuthFlowTest {
 
  private static AuthSession bound(AuthFlow flow){AuthSession session=flow.open(new ConnectionKey(UUID.randomUUID(),new Object()),NOW+10_000);flow.bindToken(session,"token");return session;}
  private static AuthSession atLogin(AuthFlow flow){AuthSession session=bound(flow);flow.accept(session,"token",AuthReply.status("LOGIN","token"),NOW);return session;}
+ private static AuthSession atTotp(AuthFlow flow){AuthSession session=atLogin(flow);flow.submitLogin(session,"12345678");flow.accept(session,"token",AuthReply.status("TOTP_REQUIRED","token"),NOW);return session;}
 }

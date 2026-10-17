@@ -13,19 +13,22 @@ public final class JsonCodec {
   }
   public static AuthRequest request(byte[] bytes) {
     var o = parse(bytes);
-    for (String k : new String[] {"op", "session", "username", "ip", "password", "answer"})
+    for (String k : new String[] {"op", "session", "username", "ip", "password", "answer", "totpCode", "recoveryCode"})
       type(o, k, false);
     for (String k : new String[] {"premium", "captchaRequired"}) type(o, k, true);
-    return GSON.fromJson(o, AuthRequest.class);
+    return decode(o,AuthRequest.class);
   }
   public static AuthReply reply(byte[] bytes) {
     var o = parse(bytes);
-    for (String k : new String[] {"status", "session", "image", "captchaGlyphs"}) type(o, k, false);
+    for (String k : new String[] {"status", "session", "image", "captchaGlyphs", "totpUri", "totpSecret"}) type(o, k, false);
+    type(o,"totpEnabled",true);
+    if(o.has("recoveryCodes")&&!o.get("recoveryCodes").isJsonArray())throw new IllegalArgumentException("Invalid recoveryCodes");
+    if(o.has("premiumTrust")&&!o.get("premiumTrust").isJsonObject())throw new IllegalArgumentException("Invalid premiumTrust");
     if (o.has("retryAfter")
         && (!o.get("retryAfter").isJsonPrimitive() || !o.getAsJsonPrimitive("retryAfter").isNumber()
             || !o.get("retryAfter").getAsString().matches("[0-9]+")))
       throw new IllegalArgumentException("Invalid retryAfter");
-    return GSON.fromJson(o, AuthReply.class);
+    return decode(o,AuthReply.class);
   }
   public static AdminRequest adminRequest(byte[] bytes){
     var o=parse(bytes);for(String k:new String[]{"op","username"})type(o,k,false);number(o,"page");number(o,"pageSize");return GSON.fromJson(o,AdminRequest.class);
@@ -59,6 +62,9 @@ public final class JsonCodec {
     } catch (Exception e) {
       throw new IllegalArgumentException("Invalid JSON", e);
     }
+  }
+  private static <T>T decode(JsonObject object,Class<T> type){
+    try{return GSON.fromJson(object,type);}catch(RuntimeException error){throw new IllegalArgumentException("Invalid "+type.getSimpleName(),error);}
   }
   private static void check(byte[] b) {
     if (b == null || b.length == 0 || b.length > MAX_BYTES)

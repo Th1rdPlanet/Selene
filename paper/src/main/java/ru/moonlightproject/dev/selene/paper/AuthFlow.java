@@ -38,6 +38,11 @@ final class AuthFlow {
   return beginRequest(session,AuthStage.WAITING_FOR_REGISTRATION);
  }
 
+ synchronized boolean submitTotp(AuthSession session,String code){
+  if(!AuthInputValidation.totp(code).valid()||session.stage!=AuthStage.WAITING_FOR_TOTP)return false;
+  return beginRequest(session,AuthStage.WAITING_FOR_TOTP);
+ }
+
  synchronized boolean accept(AuthSession session,String requestSessionId,AuthReply reply,long nowMillis){
   if(!isCurrent(session)||session.stage==AuthStage.CLOSED||nowMillis>=session.deadlineMillis){
    if(isCurrent(session)&&nowMillis>=session.deadlineMillis)close(session);
@@ -48,6 +53,11 @@ final class AuthFlow {
    case "CAPTCHA","CAPTCHA_INVALID" -> AuthStage.WAITING_FOR_CAPTCHA;
    case "LOGIN","INVALID_CREDENTIALS","ACCOUNT_EXISTS" -> AuthStage.WAITING_FOR_LOGIN;
    case "REGISTER" -> AuthStage.WAITING_FOR_REGISTRATION;
+   case "TOTP_REQUIRED" -> switch(session.resumeStage){
+    case WAITING_FOR_SESSION,WAITING_FOR_LOGIN,WAITING_FOR_REGISTRATION -> AuthStage.WAITING_FOR_TOTP;
+    default -> null;
+   };
+   case "TOTP_INVALID","RECOVERY_INVALID" -> session.resumeStage==AuthStage.WAITING_FOR_TOTP?AuthStage.WAITING_FOR_TOTP:null;
    case "AUTHENTICATED" -> AuthStage.AUTHENTICATED;
    case "EXPIRED" -> AuthStage.CLOSED;
    case "INVALID_REQUEST","UNAVAILABLE","RATE_LIMITED","BUSY" -> session.resumeStage;
