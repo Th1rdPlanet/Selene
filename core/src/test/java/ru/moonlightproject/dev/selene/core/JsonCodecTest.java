@@ -52,5 +52,26 @@ class JsonCodecTest {
   assertDoesNotThrow(()->new PremiumTrust("127.0.0.1",0));
  }
 
+ @Test void interactiveChallengeRoundTripsAndIsRedacted(){
+  String nonce="A".repeat(43);
+  AuthRequest request=new AuthRequest("interactive_complete","session","VicTim","127.0.0.1","","",false,true,"","",false,false,"INTERACTIVE",nonce);
+  AuthRequest decoded=JsonCodec.request(JsonCodec.encode(request));
+  assertEquals("INTERACTIVE",decoded.captchaKind());
+  assertEquals(nonce,decoded.challengeNonce());
+  assertFalse(request.toString().contains(nonce));
+  AuthReply reply=new AuthReply("CAPTCHA_INTERACTIVE","session","","",Map.of(),List.of(),0,"","",List.of(),false,Map.of(),nonce);
+  assertEquals(nonce,JsonCodec.reply(JsonCodec.encode(reply)).challengeNonce());
+  assertFalse(reply.toString().contains(nonce));
+  AuthRequest legacy=JsonCodec.request(bytes("{\"op\":\"begin\"}"));
+  assertEquals("",legacy.captchaKind());
+  assertEquals("",legacy.challengeNonce());
+ }
+
+ @Test void oversizedOrUnknownChallengeFieldsAreRejected(){
+  assertThrows(IllegalArgumentException.class,()->JsonCodec.request(bytes("{\"captchaKind\":\"UNKNOWN\"}")));
+  assertThrows(IllegalArgumentException.class,()->JsonCodec.request(bytes("{\"challengeNonce\":\""+"x".repeat(129)+"\"}")));
+  assertThrows(IllegalArgumentException.class,()->JsonCodec.reply(bytes("{\"challengeNonce\":\""+"x".repeat(129)+"\"}")));
+ }
+
  private static byte[] bytes(String json){return json.getBytes(StandardCharsets.UTF_8);}
 }
