@@ -44,9 +44,23 @@ final class InteractiveCaptchaManager implements AutoCloseable {
   for(int x=-1;x<=a.plan.width();x++)for(int z=-1;z<=a.plan.length();z++)for(int y=0;y<=8;y++)world.getBlockAt(baseX+x,baseY+y,baseZ+z).setType(Material.AIR,false);
   var decoration=config.platform().decoration();Material border=material(decoration.borderMaterial());
   for(var block:a.plan.floor()){boolean edge=block.point().x()<2||block.point().z()<2||block.point().x()>=a.plan.width()-2||block.point().z()>=a.plan.length()-2;world.getBlockAt(baseX+block.point().x(),baseY,baseZ+block.point().z()).setType(decoration.enabled()&&edge?border:material(block.material()),false);}
-  if(decoration.enabled())decoratePlatform(a,baseX,baseY,baseZ,decoration);
+  if(decoration.enabled()){
+   decoratePlatform(a,baseX,baseY,baseZ,decoration);
+   // Connect all four entrances with an unobstructed, contrasting path.
+   for(int x=2;x<a.plan.width()-2;x++)world.getBlockAt(baseX+x,baseY,baseZ+a.plan.length()/2).setType(border,false);
+   for(int z=2;z<a.plan.length()-2;z++)world.getBlockAt(baseX+a.plan.width()/2,baseY,baseZ+z).setType(border,false);
+   world.getBlockAt(baseX+a.plan.width()/2,baseY,baseZ+a.plan.length()/2).setType(material(decoration.lightMaterial()),false);
+  }
   Material boundary=material(config.platform().boundaryMaterial());for(int x=-1;x<=a.plan.width();x++){world.getBlockAt(baseX+x,baseY+1,baseZ-1).setType(boundary,false);world.getBlockAt(baseX+x,baseY+1,baseZ+a.plan.length()).setType(boundary,false);}for(int z=0;z<a.plan.length();z++){world.getBlockAt(baseX-1,baseY+1,baseZ+z).setType(boundary,false);world.getBlockAt(baseX+a.plan.width(),baseY+1,baseZ+z).setType(boundary,false);}
-  for(var decoy:a.plan.decoys())world.getBlockAt(baseX+decoy.x(),baseY+decoy.y(),baseZ+decoy.z()).setType(Material.COBBLESTONE,false);
+  for(var decoy:a.plan.decoys()){
+   // Low stones leave the arena readable and do not resemble a second task.
+   Material stone=switch(Math.floorMod(decoy.x()*31+decoy.z(),3)){
+    case 0 -> Material.COBBLESTONE_SLAB;
+    case 1 -> Material.MOSSY_COBBLESTONE_SLAB;
+    default -> Material.ANDESITE_SLAB;
+   };
+   world.getBlockAt(baseX+decoy.x(),baseY+decoy.y(),baseZ+decoy.z()).setType(stone,false);
+  }
   Location target=a.at(a.plan.target());switch(a.plan.scenario()){
    case BREAK_BLOCK -> {target.getBlock().setType(material(a.plan.targetMaterial()),false);for(BlockFace face:List.of(BlockFace.NORTH,BlockFace.SOUTH,BlockFace.EAST,BlockFace.WEST))target.getBlock().getRelative(face).setType(Material.STONE,false);}
    case CHOP_TREE -> buildTree(target,material(a.plan.targetMaterial()));
@@ -60,7 +74,11 @@ final class InteractiveCaptchaManager implements AutoCloseable {
   }
  }
  private void decoratePlatform(Arena a,int baseX,int baseY,int baseZ,InteractiveCaptchaConfig.Decoration decoration){Material railing=material(decoration.railingMaterial()),base=material(decoration.lampBaseMaterial()),light=material(decoration.lightMaterial());int middleX=a.plan.width()/2,middleZ=a.plan.length()/2;for(int x=1;x<a.plan.width()-1;x++)if(Math.abs(x-middleX)>1){world.getBlockAt(baseX+x,baseY+1,baseZ).setType(railing,false);world.getBlockAt(baseX+x,baseY+1,baseZ+a.plan.length()-1).setType(railing,false);}for(int z=1;z<a.plan.length()-1;z++)if(Math.abs(z-middleZ)>1){world.getBlockAt(baseX,baseY+1,baseZ+z).setType(railing,false);world.getBlockAt(baseX+a.plan.width()-1,baseY+1,baseZ+z).setType(railing,false);}for(int[] corner:new int[][]{{1,1},{a.plan.width()-2,1},{1,a.plan.length()-2},{a.plan.width()-2,a.plan.length()-2}}){for(int y=1;y<=2;y++)world.getBlockAt(baseX+corner[0],baseY+y,baseZ+corner[1]).setType(base,false);world.getBlockAt(baseX+corner[0],baseY+3,baseZ+corner[1]).setType(light,false);}}
- private static void buildTree(Location base,Material log){for(int y=0;y<4;y++)base.clone().add(0,y,0).getBlock().setType(log,false);for(int y=2;y<=4;y++){int radius=y==4?1:2;for(int x=-radius;x<=radius;x++)for(int z=-radius;z<=radius;z++)if(Math.abs(x)+Math.abs(z)<=radius+1&&!(x==0&&z==0&&y<4))base.clone().add(x,y,z).getBlock().setType(Material.OAK_LEAVES,false);}}
+ private static void buildTree(Location base,Material log){for(int y=0;y<4;y++)base.clone().add(0,y,0).getBlock().setType(log,false);for(int y=2;y<=4;y++){int radius=y==4?1:2;for(int x=-radius;x<=radius;x++)for(int z=-radius;z<=radius;z++)if(Math.abs(x)+Math.abs(z)<=radius+1&&!(x==0&&z==0&&y<4)){
+    var leaf=base.clone().add(x,y,z).getBlock();
+    var data=(org.bukkit.block.data.type.Leaves)Material.OAK_LEAVES.createBlockData();
+    data.setPersistent(true);leaf.setBlockData(data,false);
+   }}}
  private static void buildControlPillar(Location base){for(int y=0;y<=2;y++)base.clone().add(0,y,0).getBlock().setType(y==1?Material.CHISELED_STONE_BRICKS:Material.STONE_BRICKS,false);}
  private void instruction(Arena arena){String key="interactive-captcha.instructions."+arena.plan.scenario().name().toLowerCase(Locale.ROOT).replace('_','-');arena.player.sendMessage(messages.forLocale(arena.player.getLocale()).component(key));}
  void render(Player player,long seconds){Arena arena=active.get(player.getUniqueId());if(arena==null)return;AuthMessages localized=messages.forLocale(player.getLocale());String key="interactive-captcha.instructions."+arena.plan.scenario().name().toLowerCase(Locale.ROOT).replace('_','-');var task=localized.component(key);var time=localized.component("interactive-captcha.time",AuthMessages.seconds(seconds));if(config.display().title())player.showTitle(net.kyori.adventure.title.Title.title(localized.component("interactive-captcha.title"),task));else player.clearTitle();if(config.display().actionbar())player.sendActionBar(task.append(net.kyori.adventure.text.Component.space()).append(time));else player.sendActionBar(net.kyori.adventure.text.Component.empty());var objective=player.getScoreboard().getObjective("selene");if(objective!=null){for(String entry:player.getScoreboard().getEntries())player.getScoreboard().resetScores(entry);if(config.display().scoreboard()){objective.displayName(localized.component("interactive-captcha.scoreboard-title"));var taskScore=objective.getScore("§a");taskScore.customName(task);taskScore.setScore(2);var timeScore=objective.getScore("§b");timeScore.customName(time);timeScore.setScore(1);}}}

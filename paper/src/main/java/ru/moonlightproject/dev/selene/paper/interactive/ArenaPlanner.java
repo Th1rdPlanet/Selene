@@ -13,23 +13,37 @@ public final class ArenaPlanner {
     case RANDOM -> random.nextInt(platform.floorMaterials().size());};
    floor.add(new ArenaPlan.BlockPlacement(new ArenaPlan.Point(x,0,z),platform.floorMaterials().get(index)));
   }
-  List<Map.Entry<String,InteractiveCaptchaConfig.ScenarioConfig>> enabled=config.scenarios().entrySet().stream().filter(e->e.getValue().enabled()).toList();
+  List<Map.Entry<String,InteractiveCaptchaConfig.ScenarioConfig>> enabled=config.scenarios().entrySet().stream().filter(e->e.getValue().enabled()).sorted(Map.Entry.comparingByKey()).toList();
   int total=enabled.stream().mapToInt(e->e.getValue().weight()).sum(),roll=random.nextInt(total);String selected=enabled.getFirst().getKey();
   for(var entry:enabled){roll-=entry.getValue().weight();if(roll<0){selected=entry.getKey();break;}}
   ScenarioType type=ScenarioType.fromConfig(selected);
   InteractiveCaptchaConfig.ScenarioConfig scenario=config.scenarios().get(selected);
-  ArenaPlan.Point target=point(random,platform.width(),platform.length(),config.generation().minTargetDistance());
-  List<ArenaPlan.Point> decoys=new ArrayList<>();Set<ArenaPlan.Point> occupied=new HashSet<>();occupied.add(target);
-  int limit=config.generation().attempts()*Math.max(1,config.generation().decoys());
-  for(int i=0;decoys.size()<config.generation().decoys()&&i<limit;i++){ArenaPlan.Point p=point(random,platform.width(),platform.length(),1);if(occupied.add(p))decoys.add(p);}
-  if(decoys.size()<config.generation().decoys())throw new GenerationFailure("not enough collision-free cells");
+  int radius=type==ScenarioType.CHOP_TREE?2:type==ScenarioType.BREAK_BLOCK||type==ScenarioType.STAND_ON_BLOCK?1:0;
+  int border=platform.decoration().enabled()?2:1;
+  int margin=Math.max(config.generation().minTargetDistance(),border+radius);
+  List<ArenaPlan.Point> candidates=new ArrayList<>();
+  for(int x=margin;x<platform.width()-margin;x++)for(int z=margin;z<platform.length()-margin;z++){
+   // Reserve a cross of walkways and the spawn at their intersection.
+   if(Math.abs(x-platform.width()/2)<=radius||Math.abs(z-platform.length()/2)<=radius)continue;
+   candidates.add(new ArenaPlan.Point(x,1,z));
+  }
+  if(candidates.isEmpty())throw new GenerationFailure("Platform is too small for "+type+" with the configured target margin");
+  ArenaPlan.Point target=candidates.get(random.nextInt(candidates.size()));
+  List<ArenaPlan.Point> decoys=new ArrayList<>();
+  List<ArenaPlan.Point> free=new ArrayList<>();
+  for(int x=border;x<platform.width()-border;x++)for(int z=border;z<platform.length()-border;z++){
+   if(Math.abs(x-platform.width()/2)<=1||Math.abs(z-platform.length()/2)<=1)continue;
+   if(Math.abs(x-target.x())<=radius+1&&Math.abs(z-target.z())<=radius+1)continue;
+   free.add(new ArenaPlan.Point(x,1,z));
+  }
+  while(!free.isEmpty()&&decoys.size()<config.generation().decoys()){
+   ArenaPlan.Point chosen=free.remove(random.nextInt(free.size()));
+   decoys.add(chosen);
+   free.removeIf(p->Math.abs(p.x()-chosen.x())<=1&&Math.abs(p.z()-chosen.z())<=1);
+  }
   String targetMaterial=scenario.targetMaterial().isBlank()?targetMaterial(type):scenario.targetMaterial();
   String challengeItem=scenario.challengeItem().isBlank()?challengeItem(type):scenario.challengeItem();
   return new ArenaPlan(platform.width(),platform.length(),floor,type,target,decoys,targetMaterial,challengeItem);
- }
- private static ArenaPlan.Point point(SplittableRandom random,int width,int length,int minimum){
-  int margin=Math.min(Math.max(1,minimum),Math.max(1,Math.min(width,length)/2-1));
-  return new ArenaPlan.Point(random.nextInt(margin,width-margin),1,random.nextInt(margin,length-margin));
  }
  private static String targetMaterial(ScenarioType type){return switch(type){
   case BREAK_BLOCK -> "COAL_ORE";case CHOP_TREE -> "OAK_LOG";case TAKE_FROM_CHEST,PUT_IN_CHEST -> "CHEST";
