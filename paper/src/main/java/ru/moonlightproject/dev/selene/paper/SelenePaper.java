@@ -137,7 +137,7 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
   AuthSession auth=flow.open(new ConnectionKey(p.getUniqueId(),p),System.currentTimeMillis()+timeoutMillis);
   PresentationSnapshot snapshot=presentation.begin(p);Session s=new Session(p,connection,auth,snapshot);s.packLoaded=resourcePackStatuses.get(p.getUniqueId());sessions.put(p.getUniqueId(),s);
   applyVisibility(s);limbo.enter(p);presentation.render(p,snapshot,auth.view(),System.currentTimeMillis());
-  if(resourcePackDelivery!=null)Bukkit.getScheduler().runTask(this,()->sendResourcePack(s));
+  if(resourcePackDelivery!=null&&interactiveCaptcha==null)Bukkit.getScheduler().runTask(this,()->sendResourcePack(s));
   Bukkit.getScheduler().runTaskLater(this,()->{if(current(s)&&s.auth.view().stage()!=AuthStage.AUTHENTICATED)p.kick(msg(p,"timeout"));},timeoutMillis/50);
   if(standalone){flow.bindToken(s.auth,UUID.randomUUID().toString());request(s,"begin","","");}
  }
