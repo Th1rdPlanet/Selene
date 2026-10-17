@@ -124,7 +124,7 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
   getServer().getMessenger().unregisterOutgoingPluginChannel(this,MANAGEMENT_CHANNEL);
  }
  private net.kyori.adventure.text.Component msg(Player player,String key){return messages.forLocale(player.getLocale()).component("messages."+key);}
- private boolean locked(Player p){Session s=sessions.get(p.getUniqueId());return s==null||s.auth.view().stage()!=AuthStage.AUTHENTICATED;}
+ private boolean locked(Player p){Session s=sessions.get(p.getUniqueId());return s==null||LimboLockPolicy.locked(s.auth.view().stage(),s.management!=null);}
  @EventHandler(priority=EventPriority.LOWEST) public void join(PlayerJoinEvent e){
   Player p=e.getPlayer();Object connection=packetEventsEnabled?inventoryProtection.open(p):null;
   if((packetEventsEnabled&&connection==null)||gateway==null){p.kick(msg(p,"unavailable"));return;}
@@ -216,18 +216,7 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
  private void handleManagementReply(Session s,AuthReply reply){
   AuthMessages localized=messages.forLocale(s.player.getLocale());
   switch(reply.status()){
-   case "TOTP_SETUP" -> {
-    try{
-     boolean pack=!settings.getString("resource-pack-provider","NONE").equals("NONE")
-      && (settings.getString("captcha.resource-pack-loading","MANUAL").equalsIgnoreCase("MANUAL")||Boolean.TRUE.equals(s.packLoaded));
-     TotpPresentation view=TotpPresentation.setup(reply.totpUri(),reply.totpSecret(),pack,
-      new QrOptions(settings.getInt("dialogs.totp-setup.qr-quiet-zone",4),settings.getInt("dialogs.totp-setup.qr-max-modules",177)));
-     AuthDialogs.totpSetup(s.player,localized,settings,view,code->Bukkit.getScheduler().runTask(this,()->{
-      if(!AuthInputValidation.totp(code).valid()){s.player.sendMessage(msg(s.player,"totp-format"));handleManagementReply(s,reply);return;}
-      requestManagement(s,"totp_setup_confirm",code,"");
-     }));
-    }catch(RuntimeException|LinkageError failure){getLogger().warning("Could not show TOTP setup dialog for "+s.player.getName()+": "+failure.getClass().getSimpleName());s.player.sendMessage(msg(s.player,"UNAVAILABLE"));}
-   }
+   case "TOTP_SETUP" -> presentTotpSetup(s,reply,0);
    case "TOTP_RECOVERY" -> AuthDialogs.recovery(s.player,localized,settings,
     TotpPresentation.recovery(reply.recoveryCodes()),()->completeManagement(s));
    case "TOTP_STATUS" -> AuthDialogs.managementResult(s.player,localized,settings,
@@ -238,6 +227,21 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
     if(s.management.action()==ManagementRequest.Action.ENABLE)requestManagement(s,"totp_setup_begin","","");else openManagementVerification(s);}
    default -> s.player.sendMessage(msg(s.player,"UNAVAILABLE"));
   }
+ }
+ private void presentTotpSetup(Session s,AuthReply reply,int attempt){
+  if(!current(s)||s.management==null||s.management.action()!=ManagementRequest.Action.ENABLE)return;
+  int maxAttempts=Math.max(1,settings.getInt("captcha.pack-load-timeout-seconds",15))*4;
+  var policy=new TotpSetupPresentationPolicy(!settings.getString("resource-pack-provider","NONE").equalsIgnoreCase("NONE"),settings.getString("captcha.resource-pack-loading","MANUAL"),maxAttempts);
+  var action=policy.action(s.packLoaded,attempt);
+  if(action==TotpSetupPresentationPolicy.Action.WAIT){Bukkit.getScheduler().runTaskLater(this,()->presentTotpSetup(s,reply,attempt+1),5);return;}
+  try{
+   TotpPresentation view=TotpPresentation.setup(reply.totpUri(),reply.totpSecret(),action==TotpSetupPresentationPolicy.Action.SHOW_QR,
+    new QrOptions(settings.getInt("dialogs.totp-setup.qr-quiet-zone",4),settings.getInt("dialogs.totp-setup.qr-max-modules",177)));
+   AuthDialogs.totpSetup(s.player,messages.forLocale(s.player.getLocale()),settings,view,code->Bukkit.getScheduler().runTask(this,()->{
+    if(!AuthInputValidation.totp(code).valid()){s.player.sendMessage(msg(s.player,"totp-format"));presentTotpSetup(s,reply,0);return;}
+    requestManagement(s,"totp_setup_confirm",code,"");
+   }));
+  }catch(RuntimeException|LinkageError failure){getLogger().warning("Could not show TOTP setup dialog for "+s.player.getName()+": "+failure.getClass().getSimpleName());s.player.sendMessage(msg(s.player,"UNAVAILABLE"));}
  }
  private void completeManagement(Session s){
   if(!current(s)||s.management==null)return;

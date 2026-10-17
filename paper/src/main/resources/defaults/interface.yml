@@ -35,8 +35,9 @@ dialogs:
   enabled: true
   # Если диалог недоступен, безопасно принять пароль следующим отменённым сообщением чата.
   fallback-to-chat: true
-  # Разрешить игроку закрыть окно клавишей Escape. Команда откроет его повторно.
-  can-close-with-escape: true
+  # Разрешить закрытие Escape. По умолчанию выключено, чтобы игрок не остался в limbo без формы.
+  # Значение можно переопределить отдельно внутри captcha/login/register/totp/totp-setup/recovery.
+  can-close-with-escape: false
   # Ставить ли одиночную игру клиента на паузу. Для сервера обычно оставляют false.
   pause: false
   # Сколько секунд callback кнопки остаётся действительным после открытия окна.
@@ -102,6 +103,8 @@ dialogs:
       width: 180
       placement: "CONTENT"
   totp-setup:
+    # Не позволять закрыть незавершённую настройку: Paper Dialog API не присылает callback на Escape.
+    can-close-with-escape: false
     body-width: 420
     # Шрифт с 256 плитками 2×4 для QR; поставляется через ItemsAdder/Oraxen.
     qr-font: "selene:qr"

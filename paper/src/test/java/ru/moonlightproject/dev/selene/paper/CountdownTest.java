@@ -19,5 +19,7 @@ class CountdownTest {
   assertTrue(Countdown.movementChanged(1,2,3,90,0,1,2,3,91,0));
   assertTrue(Countdown.movementChanged(1,2,3,90,0,1,2,3,90,1));
   assertTrue(Countdown.movementChanged(1,2,3,90,0,1.1,2,3,90,0));
+  assertTrue(Countdown.movementChanged(1,2,3,90,0,1,2.1,3,90,0));
+  assertTrue(Countdown.movementChanged(1,2,3,90,0,1,2,3.1,90,0));
  }
 }

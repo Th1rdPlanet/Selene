@@ -48,5 +48,11 @@ class PaperConfigValidatorTest {
   Map<String,Object> code=valid();code.put("dialogs.totp-setup.code.max-length",7);
   assertTrue(assertThrows(IllegalArgumentException.class,()->PaperConfigValidator.validate(code)).getMessage().contains("code.max-length"));
  }
+ @Test void totpSetupEscapePolicyIsConfigurable(){
+  Map<String,Object> values=valid();values.put("dialogs.totp-setup.can-close-with-escape",false);
+  assertDoesNotThrow(()->PaperConfigValidator.validate(values));
+  values.put("dialogs.totp-setup.can-close-with-escape","no");
+  assertTrue(assertThrows(IllegalArgumentException.class,()->PaperConfigValidator.validate(values)).getMessage().contains("can-close-with-escape"));
+ }
  private static Map<String,Object> valid(){Map<String,Object> values=new HashMap<>();values.put("role","PROXY_AUTH");values.put("packet-events-mode","AUTO");values.put("stage","BEFORE_JOIN");values.put("captcha-view","MAP");values.put("dialogs.enabled",true);values.put("timeout-seconds",120);values.put("limbo.mode","MANAGED");values.put("limbo.world","selene_limbo");return values;}
 }

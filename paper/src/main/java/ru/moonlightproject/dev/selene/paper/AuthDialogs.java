@@ -43,7 +43,7 @@ final class AuthDialogs {
    .action(DialogAction.customClick((view,audience)->{if(audience==player)submit.accept(view.getText("answer"));},options));
   String tooltip=messages.template(path+".button.tooltip");if(!tooltip.isEmpty())buttonBuilder.tooltip(messages.component(path+".button.tooltip"));
   var base=DialogBase.builder(messages.component(path+".title")).externalTitle(messages.component(path+".external-title"))
-   .canCloseWithEscape(config.getBoolean("dialogs.can-close-with-escape",true)).pause(config.getBoolean("dialogs.pause",false)).afterAction(DialogBase.DialogAfterAction.CLOSE)
+   .canCloseWithEscape(canClose(config,path)).pause(config.getBoolean("dialogs.pause",false)).afterAction(DialogBase.DialogAfterAction.CLOSE)
    .body(List.of(DialogBody.plainMessage(body,config.getInt(path+".body-width",320)))).inputs(List.of(answer)).build();
   player.showDialog(Dialog.create(factory->factory.empty().base(base).type(buttonType(buttonBuilder.build(),config,path))));
  }
@@ -97,7 +97,7 @@ final class AuthDialogs {
   var options=ClickCallback.Options.builder().uses(1).lifetime(Duration.ofSeconds(config.getLong("dialogs.callback-lifetime-seconds",180))).build();
   var buttonBuilder=ActionButton.builder(messages.component(path+".button.text")).width(config.getInt(path+".button.width",150)).action(DialogAction.customClick(callback,options));
   String tooltip=messages.template(path+".button.tooltip");if(!tooltip.isEmpty())buttonBuilder.tooltip(messages.component(path+".button.tooltip"));var button=buttonBuilder.build();
-  var base=DialogBase.builder(messages.component(path+".title")).externalTitle(messages.component(path+".external-title")).canCloseWithEscape(config.getBoolean("dialogs.can-close-with-escape",true)).pause(config.getBoolean("dialogs.pause",false)).afterAction(DialogBase.DialogAfterAction.CLOSE)
+  var base=DialogBase.builder(messages.component(path+".title")).externalTitle(messages.component(path+".external-title")).canCloseWithEscape(canClose(config,path)).pause(config.getBoolean("dialogs.pause",false)).afterAction(DialogBase.DialogAfterAction.CLOSE)
    .body(List.of(DialogBody.plainMessage(body,config.getInt(path+".body-width",300)))).inputs(inputs).build();
   return Dialog.create(factory->factory.empty().base(base).type(buttonType(button,config,path)));
  }
@@ -106,4 +106,5 @@ final class AuthDialogs {
   var placement=DialogButtonPlacement.parse(config.getString(path+".button.placement","CONTENT"),path+".button.placement");
   return placement==DialogButtonPlacement.CONTENT?DialogType.multiAction(List.of(button)).columns(1).build():DialogType.notice(button);
  }
+ private static boolean canClose(ConfigurationSection config,String path){return config.getBoolean(path+".can-close-with-escape",config.getBoolean("dialogs.can-close-with-escape",false));}
 }
