@@ -57,7 +57,7 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
    String role=settings.getString("role",""); if(!Set.of("STANDALONE","PROXY_AUTH").contains(role))throw new IllegalArgumentException("Invalid role"); standalone=role.equals("STANDALONE");
    String stage=settings.getString("stage","");if(!Set.of("AFTER_JOIN","BEFORE_JOIN").contains(stage))throw new IllegalArgumentException("stage must be AFTER_JOIN or BEFORE_JOIN");
    if(stage.equals("BEFORE_JOIN")&&standalone)throw new IllegalArgumentException("stage BEFORE_JOIN requires role PROXY_AUTH; standalone Paper has no separate gameplay backend");
-   String captchaView=settings.getString("captcha-view","").toUpperCase(Locale.ROOT);if(!Set.of("MAP","DIALOG_FONT").contains(captchaView))throw new IllegalArgumentException("captcha-view must be MAP or DIALOG_FONT");
+   String captchaView=settings.getString("captcha-view","").toUpperCase(Locale.ROOT);if(!Set.of("MAP","DIALOG_FONT","INTERACTIVE").contains(captchaView))throw new IllegalArgumentException("captcha-view must be MAP, DIALOG_FONT or INTERACTIVE");
    String packetMode=settings.getString("packet-events-mode","AUTO").toUpperCase(Locale.ROOT);
    if(!Set.of("AUTO","ENABLED","DISABLED").contains(packetMode))throw new IllegalArgumentException("packet-events-mode must be AUTO, ENABLED or DISABLED");
    packetEventsEnabled=packetMode.equals("ENABLED")||(packetMode.equals("AUTO")&&standalone);

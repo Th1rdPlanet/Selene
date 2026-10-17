@@ -16,7 +16,8 @@ final class PaperConfiguration {
         "config.yml",Set.of("role","stage","language","console"),
         "interface.yml",Set.of("captcha-view","captcha","dialogs","presentation","resource-pack-provider"),
         "protection.yml",Set.of("packet-events-mode","secure-input","timeout-seconds","effects","visibility"),
-        "limbo.yml",Set.of("limbo"));
+        "limbo.yml",Set.of("limbo"),
+        "interactive-captcha.yml",Set.of("interactive-captcha"));
 
     static YamlConfiguration load(Path directory, Function<String,InputStream> resources) throws Exception {
         Files.createDirectories(directory);
@@ -49,7 +50,7 @@ final class PaperConfiguration {
         }
         YamlConfiguration merged=new YamlConfiguration();
         // Main config last: a stopped migration can safely resume without losing old values.
-        for(String file:List.of("interface.yml","protection.yml","limbo.yml","config.yml")) {
+        for(String file:List.of("interface.yml","protection.yml","limbo.yml","interactive-captcha.yml","config.yml")) {
             YamlConfiguration defaults=new YamlConfiguration();defaults.loadFromString(resource(resources,"defaults/"+file));
             Path path=directory.resolve(file);
             boolean create=!Files.exists(path)||(file.equals("config.yml")&&migrating);

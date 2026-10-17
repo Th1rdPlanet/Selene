@@ -1,0 +1,35 @@
+# Selene / Paper — interactive-captcha.yml
+# Используется только при captcha-view: INTERACTIVE.
+interactive-captcha:
+  world: "selene_interactive"
+  timeout-seconds: 120
+  max-mistakes: 2
+  arena-spacing: 64
+  isolation:
+    hide-players: true
+    hide-tab-list: true
+    hide-name-tags: true
+    suppress-chat: true
+  platform:
+    width: 10
+    length: 10
+    floor-pattern: "RANDOM"
+    # При RANDOM каждый блок пола независимо выбирается из списка.
+    floor-materials:
+      - STONE
+      - ANDESITE
+    boundary-material: BARRIER
+  generation:
+    attempts: 32
+    min-target-distance: 3
+    decoys: 3
+  scenarios:
+    break-block: { enabled: true, weight: 10 }
+    chop-tree: { enabled: true, weight: 8 }
+    take-from-chest: { enabled: true, weight: 8 }
+    armor-stand: { enabled: true, weight: 6 }
+    press-button: { enabled: true, weight: 8 }
+    toggle-lever: { enabled: true, weight: 8 }
+    stand-on-block: { enabled: true, weight: 10 }
+    put-in-chest: { enabled: true, weight: 7 }
+    item-frame: { enabled: true, weight: 6 }
