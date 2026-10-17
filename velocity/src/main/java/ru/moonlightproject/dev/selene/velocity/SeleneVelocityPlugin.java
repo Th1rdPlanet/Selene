@@ -285,9 +285,6 @@ public final class SeleneVelocityPlugin {
                 .flatMap(state.sessions()::get)
                 .ifPresent(session -> {
                     deliverSessionToken(event.getPlayer(), connection, session, 0);
-                    state.identities().get(event.getPlayer()).flatMap(state.twoFactorRoutes()::get)
-                        .ifPresent(route -> connection.sendPluginMessage(MANAGEMENT_CHANNEL,
-                            managementBytes(session.id(), route.action())));
                 }));
     }
 
@@ -305,7 +302,13 @@ public final class SeleneVelocityPlugin {
             .flatMap(state.sessions()::get)
             .filter(session -> session.id().equals(token))
             .ifPresent(session -> {
-                if (event.getIdentifier().equals(SESSION_CHANNEL)) acknowledgedSessionTokens.add(token);
+                if (event.getIdentifier().equals(SESSION_CHANNEL)) {
+                    acknowledgedSessionTokens.add(token);
+                    identity.ifPresent(connection -> TwoFactorDelivery.afterSessionAcknowledged(
+                        state.twoFactorRoutes().get(connection), token,
+                        (sessionToken, action) -> source.sendPluginMessage(
+                            MANAGEMENT_CHANNEL, managementBytes(sessionToken, action))));
+                }
                 else identity.ifPresent(connection -> finishTwoFactor(source.getPlayer(), connection));
             });
     }
@@ -502,6 +505,7 @@ public final class SeleneVelocityPlugin {
             player.sendMessage(text(player, "two-factor-busy"));
             return;
         }
+        TwoFactorDelivery.prepare(acknowledgedSessionTokens, session.id());
         proxy.getServer(state.config().authServer()).ifPresentOrElse(
             server -> player.createConnectionRequest(server).connect().thenAccept(result -> {
                 if (!result.isSuccessful()) {
