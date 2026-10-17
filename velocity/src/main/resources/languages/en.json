@@ -27,5 +27,10 @@
   "console-ready": "Ready • auth: <auth> • gameplay server: <target> • protection: <current>",
   "console-starting": "Starting authentication…",
   "console-backend-ready": "Backend available • trusted account snapshot refreshed.",
-  "console-backend-offline": "Backend unavailable • new logins may be rejected. Check the Rust process and connection.yml."
+  "console-backend-offline": "Backend unavailable • new logins may be rejected. Check the Rust process and connection.yml.",
+  "two-factor-player-only": "<red>This command is available to players only.</red>",
+  "two-factor-help": "<gradient:#8b5cf6:#38bdf8><bold>Two-factor security</bold></gradient><newline><gray>/2fa enable</gray> <white>— enable</white><newline><gray>/2fa status</gray> <white>— show status</white><newline><gray>/2fa disable</gray> <white>— disable</white><newline><gray>/2fa recovery</gray> <white>— renew recovery codes</white>",
+  "two-factor-auth-required": "<yellow>Sign in to your Selene account first.</yellow>",
+  "two-factor-busy": "<yellow>A 2FA operation is already running or the service is busy.</yellow>",
+  "two-factor-unavailable": "<red>Could not open the secure 2FA setup screen.</red>"
 }

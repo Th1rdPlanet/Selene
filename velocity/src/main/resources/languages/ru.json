@@ -27,5 +27,10 @@
   "console-ready": "Готово • auth: <auth> • игровой сервер: <target> • защита: <current>",
   "console-starting": "Запускаем систему авторизации…",
   "console-backend-ready": "Бэкенд доступен • список доверенных аккаунтов обновлён.",
-  "console-backend-offline": "Бэкенд недоступен • новые входы могут быть отклонены. Проверьте процесс Rust и connection.yml."
+  "console-backend-offline": "Бэкенд недоступен • новые входы могут быть отклонены. Проверьте процесс Rust и connection.yml.",
+  "two-factor-player-only": "<red>Эта команда доступна только игроку.</red>",
+  "two-factor-help": "<gradient:#8b5cf6:#38bdf8><bold>Двухфакторная защита</bold></gradient><newline><gray>/2fa enable</gray> <white>— включить</white><newline><gray>/2fa status</gray> <white>— проверить состояние</white><newline><gray>/2fa disable</gray> <white>— отключить</white><newline><gray>/2fa recovery</gray> <white>— обновить резервные коды</white>",
+  "two-factor-auth-required": "<yellow>Сначала войдите в аккаунт Selene.</yellow>",
+  "two-factor-busy": "<yellow>Настройка 2FA уже выполняется или сервис занят.</yellow>",
+  "two-factor-unavailable": "<red>Не удалось открыть безопасное окно настройки 2FA.</red>"
 }

@@ -100,6 +100,10 @@ final class ConnectionSessions {
         return true;
     }
 
+    synchronized void revokeManagement(UUID connectionId) {
+        managementUntil.remove(connectionId);
+    }
+
     boolean isCurrent(UUID connectionId, UUID sessionId) {
         Session session = byConnection.get(connectionId);
         return session != null

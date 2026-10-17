@@ -59,10 +59,14 @@ import ru.moonlightproject.dev.selene.core.TlsContexts;
 public final class SeleneVelocityPlugin {
     private static final MinecraftChannelIdentifier SESSION_CHANNEL =
         MinecraftChannelIdentifier.create("selene", "session");
+    private static final MinecraftChannelIdentifier MANAGEMENT_CHANNEL =
+        MinecraftChannelIdentifier.create("selene", "management");
     private final ProxyServer proxy;
     private final Logger logger;
     private final Path dataDirectory;
     private final Set<UUID> authenticated = ConcurrentHashMap.newKeySet();
+    private final Set<UUID> onlineProofConnections = ConcurrentHashMap.newKeySet();
+    private final Set<String> trustedPremiumAdmissions = ConcurrentHashMap.newKeySet();
     private final Set<UUID> acknowledgedSessionTokens = ConcurrentHashMap.newKeySet();
     private final Map<String, String> lastServers = new ConcurrentHashMap<>();
     private volatile Set<String> premiumNames = Set.of();
@@ -106,21 +110,34 @@ public final class SeleneVelocityPlugin {
                     config.outboundPacketsMedium(),config.outboundPacketsStrong(),config.outboundBytesLow(),
                     config.outboundBytesMedium(),config.outboundBytesStrong());
                 ConnectionSessions sessions = new ConnectionSessions(config.sessionCapacity());
+                TwoFactorRoutes twoFactorRoutes = new TwoFactorRoutes(config.sessionCapacity());
                 ConnectionIdentities<Player> identities = new ConnectionIdentities<>(config.sessionCapacity());
                 PremiumLookup premiumLookup = PremiumLookup.mojang(
                     config.premiumLookupCacheCapacity(), config.premiumLookupConcurrency(),
                     config.premiumLookupCacheTtl(), config.premiumLookupTimeout());
+                PremiumTrustCache premiumTrust = new PremiumTrustCache(
+                    config.premiumTrustCapacity(), config.premiumTrustSnapshotMaxAge(),
+                    config.premiumTrustTtl(), config.premiumTrustEnabled());
                 RelayServer relay = new RelayServer(
                     tls, config.relayBind(), Duration.ofSeconds(3), 64,
                     (request, fingerprint) -> relay(request, fingerprint));
                 runtime = new RuntimeState(
-                    config, messages, backend, admission, attacks, sessions, identities, premiumLookup, relay, fork, new ProtectionState(
+                    config, messages, backend, admission, attacks, sessions, identities, premiumLookup,
+                    premiumTrust, twoFactorRoutes, relay, fork, new ProtectionState(
                         change -> logger.info(messages.plain("protection-change",
                             VelocityMessages.literal("previous",change.previous().name()),VelocityMessages.literal("current",change.current().name()),
                             VelocityMessages.literal("source",change.source()),VelocityMessages.literal("reason",change.reason()))),
                         () -> logger.warn(messages.plain("protection-pending"))));
                 proxy.getChannelRegistrar().register(SESSION_CHANNEL);
+                proxy.getChannelRegistrar().register(MANAGEMENT_CHANNEL);
                 proxy.getCommandManager().register(proxy.getCommandManager().metaBuilder("selene").plugin(this).build(),new AccountAdminCommand(backend,messages,logger, this::protectionCommand));
+                String[] twoFactorAliases = java.util.Arrays.stream(config.twoFactorCommandAliases().split(","))
+                    .map(String::trim).filter(alias -> alias.matches("[a-zA-Z0-9_-]{1,24}"))
+                    .distinct().toArray(String[]::new);
+                if (twoFactorAliases.length == 0) throw new IllegalArgumentException("two-factor-command-aliases has no valid aliases");
+                var commandMeta = proxy.getCommandManager().metaBuilder(twoFactorAliases[0]).plugin(this);
+                if (twoFactorAliases.length > 1) commandMeta.aliases(java.util.Arrays.copyOfRange(twoFactorAliases, 1, twoFactorAliases.length));
+                proxy.getCommandManager().register(commandMeta.build(), new TwoFactorCommand(messages, this::beginTwoFactor));
                 currentLevel(runtime, System.currentTimeMillis());
                 proxy.getScheduler().buildTask(this, () -> {
                     RuntimeState active = runtime;
@@ -161,6 +178,12 @@ public final class SeleneVelocityPlugin {
             event.setResult(PreLoginEvent.PreLoginComponentResult.denied(text("busy")));
             return null;
         }
+        if (state.premiumTrust().trusted(username, event.getConnection().getRemoteAddress().getAddress(),
+            now / 1000, now)) {
+            trustedPremiumAdmissions.add(premiumAdmissionKey(username, ip));
+            event.setResult(PreLoginEvent.PreLoginComponentResult.forceOfflineMode());
+            return null;
+        }
         if (premiumNames.contains(username.toLowerCase(Locale.ROOT))) {
             event.setResult(PreLoginEvent.PreLoginComponentResult.forceOnlineMode());
             return null;
@@ -189,19 +212,22 @@ public final class SeleneVelocityPlugin {
         if (state == null) return;
         Player player = event.getPlayer();
         String ip = player.getRemoteAddress().getAddress().getHostAddress();
+        boolean trustedPremium = trustedPremiumAdmissions.remove(premiumAdmissionKey(player.getUsername(), ip));
         long now = System.currentTimeMillis();
         AttackLevel level = currentLevel(state, now);
         AttackProfile profile=state.config().attackProfiles().get(level);
         boolean suspicious = state.fork().suspicious(player.getUsername(), ip)
             || state.attacks().suspicious(ip, now);
-        boolean captcha = profile.captcha(player.isOnlineMode(), suspicious);
+        boolean premium = player.isOnlineMode() || trustedPremium;
+        boolean captcha = profile.captcha(premium, suspicious);
         ConnectionSessions.Session session;
         try {
             UUID connectionId = state.identities().open(player);
             ConnectionSessions.Opened opened = state.sessions().open(
                 connectionId, player.getUsername(), player.getRemoteAddress().getAddress(),
-                player.isOnlineMode(), captcha);
+                premium, captcha);
             session = opened.session();
+            if (player.isOnlineMode()) onlineProofConnections.add(connectionId);
             if (opened.replaced() != null) closeReplacedSession(state, opened.replaced());
         } catch (IllegalStateException full) {
             player.disconnect(text(player,"busy"));
@@ -252,12 +278,17 @@ public final class SeleneVelocityPlugin {
     @Subscribe
     public void postConnected(ServerPostConnectEvent event) {
         RuntimeState state = runtime;
-        if (state == null || isAuthenticated(event.getPlayer())) return;
+        if (state == null) return;
         event.getPlayer().getCurrentServer()
             .filter(connection -> connection.getServerInfo().getName().equals(state.config().authServer()))
             .ifPresent(connection -> state.identities().get(event.getPlayer())
                 .flatMap(state.sessions()::get)
-                .ifPresent(session -> deliverSessionToken(event.getPlayer(), connection, session, 0)));
+                .ifPresent(session -> {
+                    deliverSessionToken(event.getPlayer(), connection, session, 0);
+                    state.identities().get(event.getPlayer()).flatMap(state.twoFactorRoutes()::get)
+                        .ifPresent(route -> connection.sendPluginMessage(MANAGEMENT_CHANNEL,
+                            managementBytes(session.id(), route.action())));
+                }));
     }
 
     @Subscribe
@@ -289,6 +320,8 @@ public final class SeleneVelocityPlugin {
                 state.backend().call(boundRequest("close", session, "", ""));
             }
             state.sessions().close(connectionId);
+            onlineProofConnections.remove(connectionId);
+            state.twoFactorRoutes().clear(connectionId);
         }));
         state.identities().close(event.getPlayer());
     }
@@ -298,6 +331,7 @@ public final class SeleneVelocityPlugin {
         RuntimeState state = runtime;
         runtime = null;
         proxy.getChannelRegistrar().unregister(SESSION_CHANNEL);
+        proxy.getChannelRegistrar().unregister(MANAGEMENT_CHANNEL);
         proxy.getCommandManager().unregister("selene");
         if (state != null) {
             state.relay().close();
@@ -328,6 +362,8 @@ public final class SeleneVelocityPlugin {
             if(Set.of("AUTHENTICATED","CAPTCHA_INVALID","INVALID_CREDENTIALS","RATE_LIMITED").contains(reply.status()))
                 state.attacks().observeAuthentication(!reply.status().equals("AUTHENTICATED"),System.currentTimeMillis());
             if (reply.status().equals("AUTHENTICATED")) acceptAuthentication(player.get(), state.sessions().get(connection).orElseThrow(), reply);
+            if (Set.of("TOTP_STATUS", "TOTP_RECOVERY", "TOTP_DISABLED", "TOTP_NOT_ENABLED",
+                "TOTP_ALREADY_ENABLED").contains(reply.status())) finishTwoFactor(player.get(), connection);
             return reply;
         });
     }
@@ -338,6 +374,10 @@ public final class SeleneVelocityPlugin {
         if (state == null || !reply.status().equals("AUTHENTICATED") || connection.isEmpty()
             || !state.sessions().isCurrent(connection.get(), session.id())) return;
         authenticated.add(connection.get());
+        if (onlineProofConnections.remove(connection.get()) && session.premium()) {
+            state.backend().call(boundRequest("premium_trust", session, "", ""))
+                .exceptionally(error -> null);
+        }
         proxy.getServer(destinationFor(player, state.config()))
             .ifPresent(server -> player.createConnectionRequest(server).fireAndForget());
     }
@@ -397,6 +437,10 @@ public final class SeleneVelocityPlugin {
             .putLong(token.getMostSignificantBits()).putLong(token.getLeastSignificantBits()).array();
     }
 
+    private static byte[] managementBytes(UUID token, TwoFactorRoutes.Action action) {
+        return ByteBuffer.allocate(17).put(tokenBytes(token)).put((byte) action.ordinal()).array();
+    }
+
     private static UUID uuid(byte[] bytes) {
         ByteBuffer buffer = ByteBuffer.wrap(bytes);
         return new UUID(buffer.getLong(), buffer.getLong());
@@ -412,6 +456,7 @@ public final class SeleneVelocityPlugin {
             if(!Boolean.TRUE.equals(backendAvailable.getAndSet(true)))logger.info(state.messages().plain("console-backend-ready"));
             state.admission().replaceGreen(reply.green());
             premiumNames = Set.copyOf(new HashSet<>(reply.premiumNames()));
+            state.premiumTrust().replace(reply.premiumTrust(), System.currentTimeMillis());
         }).exceptionally(error -> {
             if(!Boolean.FALSE.equals(backendAvailable.getAndSet(false)))logger.warn(state.messages().plain("console-backend-offline"));
             logger.debug("Snapshot failure details",error);
@@ -430,6 +475,51 @@ public final class SeleneVelocityPlugin {
     private boolean isAuthenticated(Player player) {
         RuntimeState state = runtime;
         return state != null && state.identities().get(player).filter(authenticated::contains).isPresent();
+    }
+
+    private static String premiumAdmissionKey(String username, String ip) {
+        return username.toLowerCase(Locale.ROOT) + '\0' + ip;
+    }
+
+    private void beginTwoFactor(Player player, TwoFactorRoutes.Action action) {
+        RuntimeState state = runtime;
+        Optional<UUID> connection = state == null ? Optional.empty() : state.identities().get(player);
+        if (state == null || connection.isEmpty() || !authenticated.contains(connection.get())) {
+            player.sendMessage(text(player, "two-factor-auth-required"));
+            return;
+        }
+        ConnectionSessions.Session session = state.sessions().get(connection.get()).orElse(null);
+        String previous = player.getCurrentServer().map(server -> server.getServerInfo().getName())
+            .orElse(state.config().defaultServer());
+        if (session == null || !state.twoFactorRoutes().begin(connection.get(), action, previous)
+            || !state.sessions().grantManagement(connection.get(), session.id(),
+                state.config().twoFactorManagementTimeout())) {
+            state.twoFactorRoutes().clear(connection.get());
+            player.sendMessage(text(player, "two-factor-busy"));
+            return;
+        }
+        proxy.getServer(state.config().authServer()).ifPresentOrElse(
+            server -> player.createConnectionRequest(server).connect().thenAccept(result -> {
+                if (!result.isSuccessful()) {
+                    state.twoFactorRoutes().clear(connection.get());
+                    state.sessions().revokeManagement(connection.get());
+                    player.sendMessage(text(player, "two-factor-unavailable"));
+                }
+            }),
+            () -> {
+                state.twoFactorRoutes().clear(connection.get());
+                state.sessions().revokeManagement(connection.get());
+                player.sendMessage(text(player, "two-factor-unavailable"));
+            });
+    }
+
+    private void finishTwoFactor(Player player, UUID connection) {
+        RuntimeState state = runtime;
+        if (state == null) return;
+        state.sessions().revokeManagement(connection);
+        state.twoFactorRoutes().complete(connection).ifPresent(route ->
+            proxy.getServer(route.previousServer()).or(() -> proxy.getServer(state.config().defaultServer()))
+                .ifPresent(server -> player.createConnectionRequest(server).fireAndForget()));
     }
 
     private Component text(String key) {
@@ -510,6 +600,8 @@ public final class SeleneVelocityPlugin {
         ConnectionSessions sessions,
         ConnectionIdentities<Player> identities,
         PremiumLookup premiumLookup,
+        PremiumTrustCache premiumTrust,
+        TwoFactorRoutes twoFactorRoutes,
         RelayServer relay,
         ForkCapabilities fork,
         ProtectionState protection

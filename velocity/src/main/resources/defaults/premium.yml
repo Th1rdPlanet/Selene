@@ -12,3 +12,19 @@ premium-lookup-cache-capacity: 10000
 premium-lookup-cache-seconds: 3600
 # Максимум одновременных внешних запросов; защищает proxy thread и Mojang API.
 premium-lookup-concurrency: 8
+
+# --- Доверие к уже проверенной лицензии ------------------------------------
+# Если ник и IP совпали с свежей записью backend, повторный запрос к Mojang не нужен.
+premium-trust-enabled: true
+# Срок доверия. Такое же значение следует указать в backend/config.toml.
+premium-trust-ttl-days: 30
+# Жёсткий предел записей snapshot; переполнение отключает обход до следующего снимка.
+premium-trust-capacity: 10000
+# Старый snapshot не используется: Selene снова выполнит обычную проверку Mojang.
+premium-trust-snapshot-max-age-seconds: 120
+
+# --- Двухфакторная аутентификация -----------------------------------------
+# Сколько секунд действует защищённая сессия настройки на auth-сервере.
+two-factor-management-timeout-seconds: 300
+# Алиасы без /, через запятую. Секреты никогда не передаются аргументами команды.
+two-factor-command-aliases: "2fa,twofactor"

@@ -30,6 +30,9 @@ class VelocityConfigTest {
         assertFalse(config.forkEnabled());
         assertTrue(config.premiumLookupEnabled());
         assertEquals(8, config.premiumLookupConcurrency());
+        assertTrue(config.premiumTrustEnabled());
+        assertEquals(java.time.Duration.ofDays(30), config.premiumTrustTtl());
+        assertEquals("2fa", config.twoFactorCommandAliases());
     }
 
     @Test
@@ -37,6 +40,15 @@ class VelocityConfigTest {
         var file=Files.createTempFile("selene-velocity",".properties");
         Files.writeString(file,valid().replace("session-capacity=4096","session-capacity=0"));
         assertTrue(assertThrows(IllegalArgumentException.class,()->VelocityConfig.load(file)).getMessage().contains("session-capacity"));
+    }
+
+    @Test
+    void rejectsUnboundedManagementLifetimeAndUnsafeAliases() throws Exception {
+        var file=Files.createTempFile("selene-velocity",".properties");
+        Files.writeString(file,valid()+"two-factor-management-timeout-seconds=3601\n");
+        assertThrows(IllegalArgumentException.class,()->VelocityConfig.load(file));
+        Files.writeString(file,valid()+"two-factor-command-aliases=2fa,bad alias\n");
+        assertThrows(IllegalArgumentException.class,()->VelocityConfig.load(file));
     }
 
     private static String valid() {

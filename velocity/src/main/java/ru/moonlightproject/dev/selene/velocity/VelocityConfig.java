@@ -50,6 +50,12 @@ record VelocityConfig(
     int premiumLookupCacheCapacity,
     Duration premiumLookupCacheTtl,
     int premiumLookupConcurrency,
+    boolean premiumTrustEnabled,
+    Duration premiumTrustTtl,
+    int premiumTrustCapacity,
+    Duration premiumTrustSnapshotMaxAge,
+    Duration twoFactorManagementTimeout,
+    String twoFactorCommandAliases,
     int sessionCapacity,
     int perIpLimit,
     Duration perIpWindow,
@@ -75,7 +81,9 @@ record VelocityConfig(
         "profiles.strong.captcha", "profiles.strong.premium-bypass", "profiles.strong.suspicious-only", "profiles.strong.greenlist-only", "profiles.strong.reconnect-limit",
         "premium-lookup-enabled", "premium-lookup-timeout-millis",
         "premium-lookup-cache-capacity", "premium-lookup-cache-seconds",
-        "premium-lookup-concurrency");
+        "premium-lookup-concurrency", "premium-trust-enabled", "premium-trust-ttl-days",
+        "premium-trust-capacity", "premium-trust-snapshot-max-age-seconds",
+        "two-factor-management-timeout-seconds", "two-factor-command-aliases");
 
     static VelocityConfig load(Path file) throws IOException {
         Properties properties = new Properties();
@@ -138,6 +146,12 @@ record VelocityConfig(
             positive(properties, "premium-lookup-cache-capacity"),
             Duration.ofSeconds(positive(properties, "premium-lookup-cache-seconds")),
             positive(properties, "premium-lookup-concurrency"),
+            bool(properties, "premium-trust-enabled", true),
+            Duration.ofDays(bounded(properties, "premium-trust-ttl-days", 30, 3650)),
+            bounded(properties, "premium-trust-capacity", 10000, 1_000_000),
+            Duration.ofSeconds(bounded(properties, "premium-trust-snapshot-max-age-seconds", 120, 3600)),
+            Duration.ofSeconds(bounded(properties, "two-factor-management-timeout-seconds", 300, 3600)),
+            aliases(properties.getProperty("two-factor-command-aliases", "2fa")),
             positive(properties, "session-capacity"),
             positive(properties, "per-ip-limit"),
             Duration.ofSeconds(positive(properties, "per-ip-window-seconds")),
@@ -190,6 +204,19 @@ record VelocityConfig(
         return value;
     }
     private static int positive(Properties properties,String key,int fallback){return properties.containsKey(key)?positive(properties,key):fallback;}
+    private static int bounded(Properties properties,String key,int fallback,int maximum) {
+        int value=positive(properties,key,fallback);
+        if(value>maximum)throw new IllegalArgumentException("Setting is too large: "+key);
+        return value;
+    }
+    private static String aliases(String value) {
+        String normalized=java.util.Arrays.stream(value.split(",")).map(String::trim)
+            .filter(alias->!alias.isEmpty()).distinct().collect(java.util.stream.Collectors.joining(","));
+        if(normalized.isEmpty()||java.util.Arrays.stream(normalized.split(","))
+            .anyMatch(alias->!alias.matches("[a-zA-Z0-9_-]{1,24}")))
+            throw new IllegalArgumentException("Invalid two-factor-command-aliases");
+        return normalized;
+    }
     private static long positiveLong(Properties properties,String key,long fallback){
         if(!properties.containsKey(key))return fallback;long value=Long.parseLong(required(properties,key));
         if(value<1)throw new IllegalArgumentException("Setting must be positive: "+key);return value;
