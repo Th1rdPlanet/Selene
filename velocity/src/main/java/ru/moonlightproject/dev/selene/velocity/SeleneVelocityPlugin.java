@@ -322,7 +322,9 @@ public final class SeleneVelocityPlugin {
         if (bound.isEmpty()) return CompletableFuture.completedFuture(AuthReply.status("INVALID_REQUEST", ""));
         UUID sessionId = state.sessions().get(connection).orElseThrow().id();
         return state.backend().call(bound.get()).thenApply(reply -> {
-            if (!state.sessions().isCurrent(connection, sessionId)) return AuthReply.status("EXPIRED", "");
+            if (!state.sessions().observeReply(connection, sessionId, reply)) {
+                return AuthReply.status("EXPIRED", "");
+            }
             if(Set.of("AUTHENTICATED","CAPTCHA_INVALID","INVALID_CREDENTIALS","RATE_LIMITED").contains(reply.status()))
                 state.attacks().observeAuthentication(!reply.status().equals("AUTHENTICATED"),System.currentTimeMillis());
             if (reply.status().equals("AUTHENTICATED")) acceptAuthentication(player.get(), state.sessions().get(connection).orElseThrow(), reply);
