@@ -5,12 +5,15 @@ From the repository root, obtain the pinned MoonLightBridge source once and star
 ```sh
 ./scripts/bootstrap-framework.sh
 export SELENE_DATABASE_URL='sqlite://backend/selene.db?mode=rwc'
+export SELENE_TOTP_MASTER_KEY="$(openssl rand -base64 32)"
 ./scripts/run-backend.sh
 ```
 
 The launcher validates Cargo, the framework checkout, config, database environment variable and required TLS files before compiling. Pass another config path as its first argument when needed. The backend binds to `127.0.0.1:38191` by default, matching Velocity's default `backend-endpoint`.
 
 The URL also accepts `postgres://...` and `mysql://...`. Schema creation is automatic; SQL parameters are bound and account names canonicalized. Protect the database and environment credentials. SQLite is covered by automated tests; MySQL and PostgreSQL drivers compile but require integration testing against real servers before deployment.
+
+`[totp] enabled = true` requires the environment variable named by `master_key_env` to contain exactly 32 random bytes encoded as Base64. Generate it once, distribute it only to backend processes that open the same database, and store it in a secret manager. Losing or changing this key makes existing TOTP credentials undecryptable. The backend encrypts TOTP secrets with XChaCha20-Poly1305, stores keyed recovery-code hashes, rejects replayed TOTP time steps, and defaults premium-IP trust to 30 days. Authenticator interoperability uses standard six-digit SHA-1 TOTP with a 30-second period and a configurable adjacent-step window.
 
 Transport requires server PEM certificate/private key and frontend CA PEM. The frontend must verify the server name and present a certificate signed by that CA. Only authorized trusted Paper/Velocity processes may possess frontend keys: the backend trusts their premium handshake and admission decisions. `development_plaintext = true` is accepted only on a numeric loopback listen address, for smoke tests. Never expose this development listener through a public tunnel.
 

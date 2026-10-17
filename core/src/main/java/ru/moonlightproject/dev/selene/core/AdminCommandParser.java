@@ -15,7 +15,7 @@ public final class AdminCommandParser {
    if(page<1||page>1_000_000)return error("syntax");return new Parsed(new AdminRequest("list","",page,20),"");
   }
   if(arguments.length!=3)return error("syntax");String username=arguments[2];if(!username.matches("[A-Za-z0-9_]{3,16}"))return error("username");
-  String operation=switch(action){case "info"->"info";case "delete"->"delete";case "reset-password"->"resetPassword";default->null;};
+  String operation=switch(action){case "info"->"info";case "delete"->"delete";case "reset-password"->"resetPassword";case "reset-totp"->"resetTotp";default->null;};
   return operation==null?error("syntax"):new Parsed(new AdminRequest(operation,username,0,0),"");
  }
  public static String messageKey(String status){return switch(status){case "OK","NOT_FOUND","INVALID_REQUEST","BUSY","UNAVAILABLE"->"admin-status-"+status.toLowerCase(Locale.ROOT).replace('_','-');default->"admin-status-unavailable";};}

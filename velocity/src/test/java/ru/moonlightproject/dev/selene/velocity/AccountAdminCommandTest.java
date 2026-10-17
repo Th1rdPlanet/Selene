@@ -14,5 +14,6 @@ class AccountAdminCommandTest {
   assertEquals("info",AdminCommandParser.parse(new String[]{"account","info","Alice"}).request().op());
   assertEquals("delete",AdminCommandParser.parse(new String[]{"account","delete","Alice"}).request().op());
   assertEquals("resetPassword",AdminCommandParser.parse(new String[]{"account","reset-password","Alice"}).request().op());
+  assertEquals("resetTotp",AdminCommandParser.parse(new String[]{"account","reset-totp","Alice"}).request().op());
  }
 }
