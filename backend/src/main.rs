@@ -3,7 +3,7 @@ use moonlight_bridge_server::{Router, Server, ServerLimits};
 use selene_backend::{
     AdminReply, AdminRequest, Reply, Request,
     admin::AdminService,
-    service::{Policy, Service},
+    service::{Policy, Service, TotpKey, TotpPolicy},
 };
 use serde::Deserialize;
 use std::{net::SocketAddr, sync::Arc, time::Duration};
@@ -21,10 +21,55 @@ struct Config {
     development_plaintext: bool,
     #[serde(default)]
     policy: Policy,
+    #[serde(default)]
+    totp: TotpConfig,
     #[serde(default = "default_admin_concurrency")]
     admin_concurrency: usize,
     #[serde(default = "default_admin_page_size")]
     admin_page_size: u32,
+}
+#[derive(Deserialize)]
+#[serde(default, deny_unknown_fields)]
+struct TotpConfig {
+    enabled: bool,
+    master_key_env: String,
+    #[serde(flatten)]
+    policy: TotpPolicy,
+}
+impl Default for TotpConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            master_key_env: "SELENE_TOTP_MASTER_KEY".into(),
+            policy: TotpPolicy::default(),
+        }
+    }
+}
+impl TotpConfig {
+    fn resolve_key<F>(&self, lookup: F) -> anyhow::Result<Option<TotpKey>>
+    where
+        F: Fn(&str) -> Option<String>,
+    {
+        if !self.enabled {
+            return Ok(None);
+        }
+        anyhow::ensure!(
+            !self.master_key_env.trim().is_empty(),
+            "totp.master_key_env must not be empty"
+        );
+        let value = lookup(&self.master_key_env).ok_or_else(|| {
+            anyhow::anyhow!(
+                "TOTP master key environment variable {} is missing",
+                self.master_key_env
+            )
+        })?;
+        TotpKey::from_base64(&value).map(Some).with_context(|| {
+            format!(
+                "invalid TOTP master key in {} (value hidden)",
+                self.master_key_env
+            )
+        })
+    }
 }
 #[derive(Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -130,12 +175,26 @@ async fn run() -> anyhow::Result<()> {
     config
         .console
         .info("Подключаем базу данных…", "Connecting to database…");
-    let service = Arc::new(Service::new(&url, config.policy).await.with_context(|| {
-        format!(
-            "cannot initialize database configured by {} (value hidden)",
-            config.database_url_env
-        )
-    })?);
+    let totp_key = config.totp.resolve_key(|name| std::env::var(name).ok())?;
+    let service = Arc::new(
+        (if let Some(key) = totp_key {
+            Service::new_with_totp(
+                &url,
+                config.policy.clone(),
+                config.totp.policy.clone(),
+                key.into_bytes(),
+            )
+            .await
+        } else {
+            Service::new(&url, config.policy.clone()).await
+        })
+        .with_context(|| {
+            format!(
+                "cannot initialize database configured by {} (value hidden)",
+                config.database_url_env
+            )
+        })?,
+    );
     anyhow::ensure!(
         config.admin_concurrency > 0 && (1..=50).contains(&config.admin_page_size),
         "admin_concurrency must be positive and admin_page_size must be 1..=50"
@@ -274,5 +333,23 @@ mod console_tests {
         assert!(console.validate().is_ok());
         let invalid: Console = toml::from_str("language='xx'").unwrap();
         assert!(invalid.validate().is_err());
+    }
+    #[test]
+    fn enabled_totp_requires_a_valid_master_key_environment_value() {
+        let config: TotpConfig =
+            toml::from_str("enabled=true\nmaster_key_env='SELENE_TEST_TOTP_KEY'").unwrap();
+        assert!(config.resolve_key(|_| None).is_err());
+        assert!(config.resolve_key(|_| Some("YWJj".into())).is_err());
+        let valid = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, [7; 32]);
+        assert_eq!(
+            config
+                .resolve_key(|_| Some(valid.clone()))
+                .unwrap()
+                .unwrap()
+                .into_bytes(),
+            [7; 32]
+        );
+        let disabled: TotpConfig = toml::from_str("").unwrap();
+        assert!(disabled.resolve_key(|_| None).unwrap().is_none());
     }
 }

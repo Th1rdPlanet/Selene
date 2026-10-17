@@ -1,3 +1,4 @@
+use crate::totp::SecretCipher;
 use crate::{
     AdminRequest, Request,
     admin::AdminService,
@@ -70,6 +71,15 @@ async fn reset_and_delete_preserve_only_expected_state() {
     let storage = Storage::open("sqlite::memory:").await.unwrap();
     storage.register("Alice", "hash", true).await.unwrap();
     storage.trust("alice", "192.0.2.4", 500).await.unwrap();
+    let encrypted = SecretCipher::new([9; 32]).encrypt(&[7; 32]).unwrap();
+    storage
+        .enable_totp_at_step("alice", &encrypted, &[[3; 32]], 42, Some(1))
+        .await
+        .unwrap();
+    storage
+        .set_premium_trust("alice", "192.0.2.4", 1_000)
+        .await
+        .unwrap();
     let admin = AdminService::new(storage.clone(), 50);
     assert_eq!(
         admin
@@ -117,6 +127,9 @@ async fn reset_and_delete_preserve_only_expected_state() {
             .status,
         "NOT_FOUND"
     );
+    assert!(storage.totp_state("alice").await.unwrap().is_none());
+    assert!(storage.premium_snapshot(600, 10).await.unwrap().is_empty());
+    assert!(!storage.consume_recovery("alice", &[3; 32]).await.unwrap());
 }
 
 #[tokio::test]
@@ -158,4 +171,40 @@ async fn reset_offline_account_requires_registration_and_rejects_passwordless_lo
             .hash
             .is_empty()
     );
+}
+
+#[tokio::test]
+async fn admin_reports_and_resets_totp_without_exposing_secret() {
+    let storage = Storage::open("sqlite::memory:").await.unwrap();
+    storage.register("alice", "hash", false).await.unwrap();
+    let encrypted = SecretCipher::new([7; 32]).encrypt(b"secret").unwrap();
+    storage
+        .enable_totp_at_step("alice", &encrypted, &[[1; 32]], 100, None)
+        .await
+        .unwrap();
+    let admin = AdminService::new(storage.clone(), 50);
+    let info = admin
+        .handle(AdminRequest {
+            op: "info".into(),
+            username: "alice".into(),
+            ..Default::default()
+        })
+        .await
+        .account
+        .unwrap();
+    assert!(info.totp_enabled);
+    assert!(!serde_json::to_string(&info).unwrap().contains("secret"));
+    assert_eq!(
+        admin
+            .handle(AdminRequest {
+                op: "resetTotp".into(),
+                username: "alice".into(),
+                ..Default::default()
+            })
+            .await
+            .status,
+        "OK"
+    );
+    assert!(storage.totp_state("alice").await.unwrap().is_none());
+    assert!(!storage.consume_recovery("alice", &[1; 32]).await.unwrap());
 }

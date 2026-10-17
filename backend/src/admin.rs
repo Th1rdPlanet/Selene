@@ -50,6 +50,11 @@ impl AdminService {
                 .admin_reset_password(&request.username)
                 .await
                 .map(|found| status(if found { "OK" } else { "NOT_FOUND" })),
+            "resetTotp" if valid_name(&request.username) => self
+                .storage
+                .disable_totp(&request.username)
+                .await
+                .map(|found| status(if found { "OK" } else { "NOT_FOUND" })),
             _ => return status("INVALID_REQUEST"),
         };
         result.unwrap_or_else(|_| status("UNAVAILABLE"))
@@ -72,6 +77,7 @@ pub(crate) fn account(
     trusted_ip: String,
     trusted_until: i64,
     hash: String,
+    totp_enabled: bool,
 ) -> AdminAccount {
     AdminAccount {
         name,
@@ -79,5 +85,6 @@ pub(crate) fn account(
         trusted_ip,
         trusted_until,
         password_reset: hash.is_empty(),
+        totp_enabled,
     }
 }

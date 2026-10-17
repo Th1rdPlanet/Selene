@@ -72,6 +72,7 @@ impl TotpEngine {
         secret
     }
 
+    #[cfg(test)]
     pub(crate) fn code_at(&self, secret: &[u8], unix_seconds: u64) -> anyhow::Result<String> {
         ensure!(!secret.is_empty(), "empty TOTP secret");
         hotp(secret, unix_seconds / self.period)
@@ -155,6 +156,7 @@ impl EncryptedSecret {
             ciphertext,
         })
     }
+    #[cfg(test)]
     pub(crate) fn version(&self) -> u8 {
         self.version
     }

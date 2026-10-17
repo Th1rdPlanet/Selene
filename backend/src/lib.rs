@@ -16,6 +16,7 @@ pub struct AdminAccount {
     pub trusted_ip: String,
     pub trusted_until: i64,
     pub password_reset: bool,
+    pub totp_enabled: bool,
 }
 #[derive(Default, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -37,6 +38,14 @@ pub struct Request {
     pub answer: String,
     pub premium: bool,
     pub captcha_required: bool,
+    pub totp_code: String,
+    pub recovery_code: String,
+}
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PremiumTrust {
+    pub ip: String,
+    pub expires_at: i64,
 }
 #[derive(Default, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -48,6 +57,11 @@ pub struct Reply {
     pub green: BTreeMap<String, String>,
     pub premium_names: Vec<String>,
     pub retry_after: u32,
+    pub totp_uri: String,
+    pub totp_secret: String,
+    pub recovery_codes: Vec<String>,
+    pub totp_enabled: bool,
+    pub premium_trust: BTreeMap<String, PremiumTrust>,
 }
 impl Reply {
     pub fn status(status: &str, session: &str) -> Self {

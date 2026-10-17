@@ -6,6 +6,18 @@ private_key = "unused-in-development.key"
 client_ca = "unused-in-development-ca.pem"
 development_plaintext = true
 
+[totp]
+enabled = true
+master_key_env = "SELENE_TOTP_MASTER_KEY"
+issuer = "Selene"
+period_seconds = 30
+accepted_window = 1
+setup_seconds = 300
+max_attempts = 3
+recovery_codes = 10
+premium_trust_seconds = 2592000
+snapshot_capacity = 4096
+
 [policy]
 session_capacity = 100
 pending_seconds = 30

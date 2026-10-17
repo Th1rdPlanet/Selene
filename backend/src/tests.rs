@@ -14,6 +14,16 @@ async fn service() -> service::Service {
         .await
         .unwrap()
 }
+async fn totp_service() -> service::Service {
+    service::Service::new_with_totp(
+        "sqlite::memory:",
+        service::Policy::default(),
+        service::TotpPolicy::default(),
+        [7; 32],
+    )
+    .await
+    .unwrap()
+}
 #[tokio::test]
 async fn register_login_and_case_normalization() {
     let s = service().await;
@@ -216,4 +226,169 @@ async fn password_completion_after_session_expiry_cannot_register() {
     assert_eq!(s.handle(r.clone()).await.status, "EXPIRED");
     r.op = "profile".into();
     assert_eq!(s.handle(r).await.status, "ACCOUNT_NEW");
+}
+
+#[tokio::test]
+async fn totp_setup_requires_confirmation_and_returns_recovery_once() {
+    let s = totp_service().await;
+    let mut r = request("begin");
+    assert_eq!(s.handle(r.clone()).await.status, "REGISTER");
+    r.op = "register".into();
+    assert_eq!(s.handle(r.clone()).await.status, "AUTHENTICATED");
+    r.op = "totp_setup_begin".into();
+    let setup = s.handle(r.clone()).await;
+    assert_eq!(setup.status, "TOTP_SETUP");
+    assert!(setup.totp_uri.starts_with("otpauth://totp/"));
+    assert!(!setup.totp_secret.is_empty());
+    assert!(s.storage().totp_state("alice").await.unwrap().is_none());
+    let secret = data_encoding::BASE32_NOPAD
+        .decode(setup.totp_secret.as_bytes())
+        .unwrap();
+    let engine = crate::totp::TotpEngine::new("Selene", 30, 1).unwrap();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    r.op = "totp_setup_confirm".into();
+    r.totp_code = engine.code_at(&secret, now).unwrap();
+    let confirmed = s.handle(r.clone()).await;
+    assert_eq!(confirmed.status, "TOTP_RECOVERY");
+    assert_eq!(confirmed.recovery_codes.len(), 10);
+    assert!(confirmed.totp_enabled);
+    assert!(s.storage().totp_state("alice").await.unwrap().is_some());
+    assert!(s.handle(r).await.recovery_codes.is_empty());
+}
+
+#[tokio::test]
+async fn pending_totp_setup_expires_without_persisting_a_secret() {
+    let policy = service::TotpPolicy {
+        setup_seconds: 1,
+        ..Default::default()
+    };
+    let s = service::Service::new_with_totp(
+        "sqlite::memory:",
+        service::Policy::default(),
+        policy,
+        [7; 32],
+    )
+    .await
+    .unwrap();
+    let mut r = request("begin");
+    s.handle(r.clone()).await;
+    r.op = "register".into();
+    s.handle(r.clone()).await;
+    r.op = "totp_setup_begin".into();
+    let setup = s.handle(r.clone()).await;
+    let secret = data_encoding::BASE32_NOPAD
+        .decode(setup.totp_secret.as_bytes())
+        .unwrap();
+    tokio::time::sleep(std::time::Duration::from_millis(1_100)).await;
+    let engine = crate::totp::TotpEngine::new("Selene", 30, 1).unwrap();
+    let unix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    r.op = "totp_setup_confirm".into();
+    r.totp_code = engine.code_at(&secret, unix).unwrap();
+    assert_eq!(s.handle(r).await.status, "EXPIRED");
+    assert!(s.storage().totp_state("alice").await.unwrap().is_none());
+}
+
+#[tokio::test]
+async fn password_and_premium_accounts_require_totp_and_reject_replay() {
+    let s = totp_service().await;
+    let (secret, _) = enable_totp(&s, false).await;
+    let mut login = request("begin");
+    assert_eq!(s.handle(login.clone()).await.status, "LOGIN");
+    login.op = "login".into();
+    assert_eq!(s.handle(login.clone()).await.status, "TOTP_REQUIRED");
+    let engine = crate::totp::TotpEngine::new("Selene", 30, 1).unwrap();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    login.op = "totp_verify".into();
+    login.totp_code = engine.code_at(&secret, now + 30).unwrap();
+    assert_eq!(s.handle(login.clone()).await.status, "AUTHENTICATED");
+
+    let mut replay = request("begin");
+    s.handle(replay.clone()).await;
+    replay.op = "login".into();
+    s.handle(replay.clone()).await;
+    replay.op = "totp_verify".into();
+    replay.totp_code = login.totp_code;
+    assert_eq!(s.handle(replay).await.status, "TOTP_INVALID");
+
+    let premium = totp_service().await;
+    let (_secret, _setup) = enable_totp(&premium, true).await;
+    let mut original = request("begin");
+    original.premium = true;
+    assert_eq!(premium.handle(original).await.status, "TOTP_REQUIRED");
+}
+
+#[tokio::test]
+async fn recovery_code_is_single_use_and_totp_failures_are_bounded() {
+    let s = totp_service().await;
+    let (_secret, setup) = enable_totp(&s, false).await;
+    let recovery = setup.recovery_codes[0].clone();
+    let mut login = request("begin");
+    s.handle(login.clone()).await;
+    login.op = "login".into();
+    s.handle(login.clone()).await;
+    login.op = "totp_verify".into();
+    login.recovery_code = recovery.clone();
+    assert_eq!(s.handle(login).await.status, "AUTHENTICATED");
+    let mut second = request("begin");
+    s.handle(second.clone()).await;
+    second.op = "login".into();
+    s.handle(second.clone()).await;
+    second.op = "totp_verify".into();
+    second.recovery_code = recovery;
+    assert_eq!(s.handle(second.clone()).await.status, "RECOVERY_INVALID");
+    second.recovery_code.clear();
+    second.totp_code = "000000".into();
+    assert_eq!(s.handle(second.clone()).await.status, "TOTP_INVALID");
+    assert_eq!(s.handle(second).await.status, "RATE_LIMITED");
+}
+
+#[test]
+fn totp_master_key_is_required_and_exactly_32_bytes() {
+    assert!(service::TotpKey::from_base64("").is_err());
+    assert!(service::TotpKey::from_base64("YWJj").is_err());
+    let encoded = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, [7; 32]);
+    assert_eq!(
+        service::TotpKey::from_base64(&encoded)
+            .unwrap()
+            .into_bytes(),
+        [7; 32]
+    );
+}
+
+async fn enable_totp(s: &service::Service, premium: bool) -> (Vec<u8>, Reply) {
+    let mut r = request("begin");
+    r.premium = premium;
+    s.handle(r.clone()).await;
+    r.op = if premium {
+        "totp_setup_begin".into()
+    } else {
+        "register".into()
+    };
+    if !premium {
+        assert_eq!(s.handle(r.clone()).await.status, "AUTHENTICATED");
+        r.op = "totp_setup_begin".into();
+    }
+    let setup = s.handle(r.clone()).await;
+    let secret = data_encoding::BASE32_NOPAD
+        .decode(setup.totp_secret.as_bytes())
+        .unwrap();
+    let engine = crate::totp::TotpEngine::new("Selene", 30, 1).unwrap();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    r.op = "totp_setup_confirm".into();
+    r.totp_code = engine.code_at(&secret, now).unwrap();
+    let confirmed = s.handle(r.clone()).await;
+    assert_eq!(confirmed.status, "TOTP_RECOVERY");
+    (secret, confirmed)
 }
