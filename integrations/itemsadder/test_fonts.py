@@ -37,7 +37,14 @@ class FontAssetsTest(unittest.TestCase):
     def test_qr_has_all_exact_unique_tiles_without_clipping(self):
         font_path = ASSETS / "font/qr.json"
         texture = Image.open(ASSETS / "textures/font/qr.png").convert("RGBA")
-        provider = json.loads(font_path.read_text())["providers"][0]
+        providers = json.loads(font_path.read_text())["providers"]
+        provider = providers[0]
+        self.assertEqual(9, provider["height"])
+        self.assertEqual(9, provider["ascent"])
+        self.assertEqual(-1.5, providers[1]["advances"][chr(0xE3FF)])
+        glyph_advance = int(0.5 + 4 * provider["height"] / 8) + 1
+        tile_advance = glyph_advance + providers[1]["advances"][chr(0xE3FF)]
+        self.assertEqual(provider["height"] / 4, tile_advance / 2)
         chars = "".join(provider["chars"])
         self.assertEqual(list(range(0xE400, 0xE500)), list(map(ord, chars)))
         self.assertEqual((64, 128), texture.size)
@@ -47,7 +54,9 @@ class FontAssetsTest(unittest.TestCase):
             tile = texture.crop((x, y, x + 4, y + 8))
             tiles.append(tile.tobytes())
             opaque = sum(1 for py in range(8) for px in range(4) if tile.getpixel((px, py))[3])
-            self.assertEqual(bits.bit_count() * 4, opaque)
+            black = sum(1 for py in range(8) for px in range(4) if tile.getpixel((px, py))[:3] == (0, 0, 0))
+            self.assertEqual(32, opaque)
+            self.assertEqual(bits.bit_count() * 4, black)
         self.assertEqual(256, len(set(tiles)))
 
 

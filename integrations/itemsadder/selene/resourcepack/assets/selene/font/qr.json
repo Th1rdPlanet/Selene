@@ -3,8 +3,8 @@
     {
       "type": "bitmap",
       "file": "selene:font/qr.png",
-      "ascent": 8,
-      "height": 8,
+      "ascent": 9,
+      "height": 9,
       "chars": [
         "\ue400\ue401\ue402\ue403\ue404\ue405\ue406\ue407\ue408\ue409\ue40a\ue40b\ue40c\ue40d\ue40e\ue40f",
         "\ue410\ue411\ue412\ue413\ue414\ue415\ue416\ue417\ue418\ue419\ue41a\ue41b\ue41c\ue41d\ue41e\ue41f",
@@ -23,6 +23,12 @@
         "\ue4e0\ue4e1\ue4e2\ue4e3\ue4e4\ue4e5\ue4e6\ue4e7\ue4e8\ue4e9\ue4ea\ue4eb\ue4ec\ue4ed\ue4ee\ue4ef",
         "\ue4f0\ue4f1\ue4f2\ue4f3\ue4f4\ue4f5\ue4f6\ue4f7\ue4f8\ue4f9\ue4fa\ue4fb\ue4fc\ue4fd\ue4fe\ue4ff"
       ]
+    },
+    {
+      "type": "space",
+      "advances": {
+        "\ue3ff": -1.5
+      }
     }
   ]
 }

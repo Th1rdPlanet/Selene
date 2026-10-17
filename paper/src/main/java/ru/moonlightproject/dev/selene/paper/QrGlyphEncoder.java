@@ -18,6 +18,7 @@ record QrOptions(int quietZone,int maxModules){
 
 final class QrGlyphEncoder{
  private static final int FIRST_GLYPH=0xE400;
+ private static final char SPACER='\uE3FF';
  private QrGlyphEncoder(){}
 
  static String encode(String uri,QrOptions options){
@@ -38,7 +39,7 @@ final class QrGlyphEncoder{
      int sourceX=tileX+x-options.quietZone(),sourceY=tileY+y-options.quietZone();
      if(sourceX>=0&&sourceY>=0&&sourceX<content&&sourceY<content&&raw.get(sourceX,sourceY))bits|=1<<(y*2+x);
     }
-    glyphs.append((char)(FIRST_GLYPH+bits));
+    glyphs.append((char)(FIRST_GLYPH+bits)).append(SPACER);
    }
   }
   return glyphs.toString();

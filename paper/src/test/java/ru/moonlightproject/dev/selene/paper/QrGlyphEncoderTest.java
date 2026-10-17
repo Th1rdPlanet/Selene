@@ -11,13 +11,15 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class QrGlyphEncoderTest {
  private static final String URI="otpauth://totp/Selene%3AVicTim?secret=JBSWY3DPEHPK3PXP&issuer=Selene&algorithm=SHA1&digits=6&period=30";
+ private static final int SPACER=0xE3FF;
 
  @Test void glyphTilesRoundTripThroughARealQrDecoder() throws Exception{
   String glyphs=QrGlyphEncoder.encode(URI,new QrOptions(4,96));
   String[] rows=glyphs.split("\\n",-1);
   assertTrue(rows.length>0&&rows.length<=24);
-  assertTrue(rows[0].length()>0&&rows[0].length()<=48);
-  assertTrue(glyphs.codePoints().filter(code->code!='\n').allMatch(code->code>=0xE400&&code<=0xE4FF));
+  assertTrue(rows[0].length()>0&&rows[0].length()<=96);
+  for(String row:rows)for(int index=0;index<row.length();index++)
+   assertTrue(index%2==0?row.charAt(index)>=0xE400&&row.charAt(index)<=0xE4FF:row.charAt(index)==SPACER);
   assertEquals(URI,decode(glyphs));
  }
 
@@ -46,9 +48,9 @@ class QrGlyphEncoderTest {
  }
 
  private static boolean[][] modules(String glyphs){
-  String[] rows=glyphs.split("\\n",-1);boolean[][] result=new boolean[rows.length*4][rows[0].length()*2];
-  for(int tileY=0;tileY<rows.length;tileY++)for(int tileX=0;tileX<rows[tileY].length();tileX++){
-   int bits=rows[tileY].charAt(tileX)-0xE400;
+  String[] rows=glyphs.split("\\n",-1);int tiles=rows[0].length()/2;boolean[][] result=new boolean[rows.length*4][tiles*2];
+  for(int tileY=0;tileY<rows.length;tileY++)for(int tileX=0;tileX<tiles;tileX++){
+   int bits=rows[tileY].charAt(tileX*2)-0xE400;
    for(int y=0;y<4;y++)for(int x=0;x<2;x++)result[tileY*4+y][tileX*2+x]=(bits&(1<<(y*2+x)))!=0;
   }
   return result;
