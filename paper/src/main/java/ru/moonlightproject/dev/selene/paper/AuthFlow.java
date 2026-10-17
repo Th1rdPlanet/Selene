@@ -27,6 +27,10 @@ final class AuthFlow {
   if(!AuthInputValidation.captcha(answer).valid()||session.stage!=AuthStage.WAITING_FOR_CAPTCHA)return false;
   return beginRequest(session,AuthStage.WAITING_FOR_CAPTCHA);
  }
+ synchronized boolean submitInteractive(AuthSession session){
+  if(session.stage!=AuthStage.WAITING_FOR_CAPTCHA)return false;
+  return beginRequest(session,AuthStage.WAITING_FOR_CAPTCHA);
+ }
 
  synchronized boolean submitLogin(AuthSession session,String password){
   if(!AuthInputValidation.password(password,8,256).valid()||session.stage!=AuthStage.WAITING_FOR_LOGIN)return false;
@@ -55,7 +59,7 @@ final class AuthFlow {
   }
   if(!session.busy||!session.sessionId.equals(requestSessionId)||!session.sessionId.equals(reply.session()))return false;
   AuthStage next=switch(reply.status()){
-   case "CAPTCHA","CAPTCHA_INVALID" -> AuthStage.WAITING_FOR_CAPTCHA;
+   case "CAPTCHA","CAPTCHA_INVALID","CAPTCHA_INTERACTIVE" -> AuthStage.WAITING_FOR_CAPTCHA;
    case "LOGIN","INVALID_CREDENTIALS","ACCOUNT_EXISTS" -> AuthStage.WAITING_FOR_LOGIN;
    case "REGISTER" -> AuthStage.WAITING_FOR_REGISTRATION;
    case "TOTP_REQUIRED" -> switch(session.resumeStage){

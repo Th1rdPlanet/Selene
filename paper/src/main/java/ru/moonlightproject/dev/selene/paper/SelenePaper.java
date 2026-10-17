@@ -5,6 +5,7 @@ import org.bukkit.*;
 import org.bukkit.command.*;
 import org.bukkit.entity.Player;
 import org.bukkit.event.*;
+import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.entity.*;
 import org.bukkit.event.inventory.*;
 import org.bukkit.event.player.*;
@@ -31,12 +32,13 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
  private final AuthFlow flow=new AuthFlow();
  private final SecureChatInput secureInput=new SecureChatInput();
  private org.bukkit.configuration.file.YamlConfiguration settings;
- private InventoryProtection inventoryProtection; private AuthGateway gateway; private AccountAdminGateway adminGateway; private AuthMessages messages; private LimboManager limbo; private PlayerPresentation presentation; private ResourcePackDelivery resourcePackDelivery; private int presentationTask=-1; private boolean standalone,captcha,dialogCapable,packetEventsEnabled;
+ private InventoryProtection inventoryProtection; private AuthGateway gateway; private AccountAdminGateway adminGateway; private AuthMessages messages; private LimboManager limbo; private PlayerPresentation presentation; private ResourcePackDelivery resourcePackDelivery; private InteractiveCaptchaManager interactiveCaptcha; private int presentationTask=-1; private boolean standalone,captcha,dialogCapable,packetEventsEnabled;
  private static final class Session {
   final Player player; final Object inventoryConnection; final AuthSession auth; final PresentationSnapshot snapshot;
   MapView map;
   ItemStack previousMainHand;
   String captchaImage="",captchaGlyphs=""; Boolean packLoaded; int captchaDisplayGeneration;
+  String interactiveNonce="";
   ManagementRequest management; boolean managementStarted;
   Session(Player p,Object connection,AuthSession auth,PresentationSnapshot snapshot){player=p;inventoryConnection=connection;this.auth=auth;this.snapshot=snapshot;}
  }
@@ -58,6 +60,7 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
    String stage=settings.getString("stage","");if(!Set.of("AFTER_JOIN","BEFORE_JOIN").contains(stage))throw new IllegalArgumentException("stage must be AFTER_JOIN or BEFORE_JOIN");
    if(stage.equals("BEFORE_JOIN")&&standalone)throw new IllegalArgumentException("stage BEFORE_JOIN requires role PROXY_AUTH; standalone Paper has no separate gameplay backend");
    String captchaView=settings.getString("captcha-view","").toUpperCase(Locale.ROOT);if(!Set.of("MAP","DIALOG_FONT","INTERACTIVE").contains(captchaView))throw new IllegalArgumentException("captcha-view must be MAP, DIALOG_FONT or INTERACTIVE");
+   if(captchaView.equals("INTERACTIVE")){interactiveCaptcha=new InteractiveCaptchaManager(this,InteractiveCaptchaConfig.parse(settings.getConfigurationSection("interactive-captcha")),messages);interactiveCaptcha.load();}
    String packetMode=settings.getString("packet-events-mode","AUTO").toUpperCase(Locale.ROOT);
    if(!Set.of("AUTO","ENABLED","DISABLED").contains(packetMode))throw new IllegalArgumentException("packet-events-mode must be AUTO, ENABLED or DISABLED");
    packetEventsEnabled=packetMode.equals("ENABLED")||(packetMode.equals("AUTO")&&standalone);
@@ -117,7 +120,7 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
  private static int positiveInt(Properties props,String key){int value=Integer.parseInt(required(props,key));if(value<1||value>65535)throw new IllegalArgumentException("Setting must be a valid port: "+key);return value;}
  @Override public void onDisable(){
   for(Session s:sessions.values())s.player.kick(msg(s.player,"unavailable"));
- sessions.clear();resourcePackStatuses.clear();if(presentationTask!=-1)Bukkit.getScheduler().cancelTask(presentationTask);if(gateway!=null)gateway.close();if(inventoryProtection!=null)inventoryProtection.shutdown();
+ if(interactiveCaptcha!=null)interactiveCaptcha.close();sessions.clear();resourcePackStatuses.clear();if(presentationTask!=-1)Bukkit.getScheduler().cancelTask(presentationTask);if(gateway!=null)gateway.close();if(inventoryProtection!=null)inventoryProtection.shutdown();
   getServer().getMessenger().unregisterIncomingPluginChannel(this,SESSION_CHANNEL,this);
   getServer().getMessenger().unregisterOutgoingPluginChannel(this,SESSION_CHANNEL);
   getServer().getMessenger().unregisterIncomingPluginChannel(this,MANAGEMENT_CHANNEL,this);
@@ -126,6 +129,7 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
  private net.kyori.adventure.text.Component msg(Player player,String key){return messages.forLocale(player.getLocale()).component("messages."+key);}
  private boolean locked(Player p){Session s=sessions.get(p.getUniqueId());return s==null||LimboLockPolicy.locked(s.auth.view().stage(),s.management!=null);}
  @EventHandler(priority=EventPriority.LOWEST) public void join(PlayerJoinEvent e){
+  e.joinMessage(null);
   Player p=e.getPlayer();Object connection=packetEventsEnabled?inventoryProtection.open(p):null;
   if((packetEventsEnabled&&connection==null)||gateway==null){p.kick(msg(p,"unavailable"));return;}
   long timeoutMillis=Math.max(10,settings.getLong("timeout-seconds",120))*1000;
@@ -159,7 +163,7 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
  }
  private boolean current(Session s){return sessions.get(s.player.getUniqueId())==s&&flow.isCurrent(s.auth)&&s.player.isOnline();}
  private AuthRequest dto(Session s,String op,String password,String answer){return dto(s,op,password,answer,"","");}
- private AuthRequest dto(Session s,String op,String password,String answer,String totp,String recovery){return new AuthRequest(op,s.auth.view().sessionId(),s.player.getName(),s.player.getAddress().getAddress().getHostAddress(),password,answer,standalone&&Bukkit.getOnlineMode(),captcha,totp,recovery);}
+ private AuthRequest dto(Session s,String op,String password,String answer,String totp,String recovery){String kind=op.equals("begin")&&interactiveCaptcha!=null?"INTERACTIVE":"";String nonce=op.startsWith("interactive_")?s.interactiveNonce:"";return new AuthRequest(op,s.auth.view().sessionId(),s.player.getName(),s.player.getAddress().getAddress().getHostAddress(),password,answer,standalone&&Bukkit.getOnlineMode(),captcha,totp,recovery,false,false,kind,nonce);}
  private void request(Session s,String op,String password,String answer){
   request(s,op,password,answer,"","");
  }
@@ -171,8 +175,9 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
     if(error!=null||reply==null){s.player.kick(msg(s.player,"unavailable"));return;}
     if(!flow.accept(s.auth,requestSession,reply,System.currentTimeMillis())){s.player.kick(msg(s.player,"unavailable"));return;}
     switch(reply.status()){
-     case "AUTHENTICATED" -> {secureInput.clear(s.player.getUniqueId());if(packetEventsEnabled)inventoryProtection.authenticate(s.inventoryConnection);presentation.restore(s.player,s.snapshot);restoreVisibility(s);releaseMap(s);s.player.updateInventory();limbo.exit(s.player,s.snapshot);s.player.sendMessage(msg(s.player,"AUTHENTICATED"));}
+     case "AUTHENTICATED" -> {secureInput.clear(s.player.getUniqueId());if(interactiveCaptcha!=null)interactiveCaptcha.stop(s.player,false);if(packetEventsEnabled)inventoryProtection.authenticate(s.inventoryConnection);presentation.restore(s.player,s.snapshot);restoreVisibility(s);releaseMap(s);s.player.updateInventory();limbo.exit(s.player,s.snapshot);s.player.sendMessage(msg(s.player,"AUTHENTICATED"));}
      case "CAPTCHA" -> {s.captchaImage=reply.image();s.captchaGlyphs=reply.captchaGlyphs();showCaptcha(s);}
+     case "CAPTCHA_INTERACTIVE" -> {s.interactiveNonce=reply.challengeNonce();showInteractiveCaptcha(s);}
      case "LOGIN","REGISTER" -> {s.player.sendMessage(msg(s.player,reply.status()));openCredentialInput(s,reply.status());}
      case "TOTP_REQUIRED" -> {s.player.sendMessage(msg(s.player,"TOTP_REQUIRED"));openTotpInput(s);}
      case "TOTP_INVALID","RECOVERY_INVALID" -> {s.player.sendMessage(msg(s.player,reply.status()));openTotpInput(s);}
@@ -183,6 +188,12 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
     }
    });
   });
+ }
+ private void showInteractiveCaptcha(Session s){
+  if(interactiveCaptcha==null||s.interactiveNonce.isBlank()){s.player.kick(msg(s.player,"unavailable"));return;}
+  try{interactiveCaptcha.start(s.player,s.auth.view().sessionId(),s.interactiveNonce,success->Bukkit.getScheduler().runTask(this,()->{
+   if(!current(s))return;interactiveCaptcha.stop(s.player,false);if(!flow.submitInteractive(s.auth)){s.player.sendMessage(msg(s.player,"not-ready"));return;}request(s,success?"interactive_complete":"interactive_mistake","","");
+  }));}catch(RuntimeException error){getLogger().warning("Interactive CAPTCHA could not start for "+s.player.getName()+": "+error.getMessage());s.player.kick(msg(s.player,"unavailable"));}
  }
  private void startManagement(Session s){
   if(!current(s)||s.management==null||s.managementStarted)return;
@@ -306,20 +317,21 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
   if(!accepted){p.sendMessage(msg(p,"not-ready"));return true;}
   request(s,name,args[0],"");return true;
  }
- @EventHandler public void quit(PlayerQuitEvent e){secureInput.clear(e.getPlayer().getUniqueId());resourcePackStatuses.remove(e.getPlayer().getUniqueId());Session s=sessions.get(e.getPlayer().getUniqueId());if(s!=null&&s.player==e.getPlayer()&&sessions.remove(e.getPlayer().getUniqueId(),s)){if(packetEventsEnabled)inventoryProtection.close(s.inventoryConnection);presentation.restore(s.player,s.snapshot);restoreVisibility(s);releaseMap(s);gateway.call(dto(s,"close","",""));flow.close(s.auth);}}
+ @EventHandler public void quit(PlayerQuitEvent e){e.quitMessage(null);secureInput.clear(e.getPlayer().getUniqueId());resourcePackStatuses.remove(e.getPlayer().getUniqueId());Session s=sessions.get(e.getPlayer().getUniqueId());if(s!=null&&s.player==e.getPlayer()&&sessions.remove(e.getPlayer().getUniqueId(),s)){if(interactiveCaptcha!=null)interactiveCaptcha.stop(s.player,false);if(packetEventsEnabled)inventoryProtection.close(s.inventoryConnection);presentation.restore(s.player,s.snapshot);restoreVisibility(s);releaseMap(s);gateway.call(dto(s,"close","",""));flow.close(s.auth);}}
  @EventHandler public void resourcePackStatus(PlayerResourcePackStatusEvent e){getLogger().info("Resource pack • игрок: "+e.getPlayer().getName()+" • статус: "+e.getStatus());Boolean loaded=switch(e.getStatus()){case SUCCESSFULLY_LOADED -> true;case DECLINED,FAILED_DOWNLOAD,INVALID_URL,FAILED_RELOAD,DISCARDED -> false;default -> null;};if(loaded==null)return;resourcePackStatuses.put(e.getPlayer().getUniqueId(),loaded);Session s=sessions.get(e.getPlayer().getUniqueId());if(s==null)return;s.packLoaded=loaded;if(loaded&&settings.getString("captcha.resource-pack-loading","MANUAL").equalsIgnoreCase("SERVER")&&s.auth.view().stage()==AuthStage.WAITING_FOR_CAPTCHA)showCaptcha(s);}
- @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void move(PlayerMoveEvent e){Location from=e.getFrom(),to=e.getTo();if(locked(e.getPlayer())&&to!=null&&Countdown.movementChanged(from.getX(),from.getY(),from.getZ(),from.getYaw(),from.getPitch(),to.getX(),to.getY(),to.getZ(),to.getYaw(),to.getPitch()))e.setTo(from);}
+ @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void move(PlayerMoveEvent e){Location from=e.getFrom(),to=e.getTo();if(to!=null&&interactiveCaptcha!=null&&interactiveCaptcha.active(e.getPlayer())){interactiveCaptcha.move(e.getPlayer(),to);return;}if(locked(e.getPlayer())&&to!=null&&Countdown.movementChanged(from.getX(),from.getY(),from.getZ(),from.getYaw(),from.getPitch(),to.getX(),to.getY(),to.getZ(),to.getYaw(),to.getPitch()))e.setTo(from);}
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void teleport(PlayerTeleportEvent e){if(locked(e.getPlayer())&&e.getCause()!=PlayerTeleportEvent.TeleportCause.PLUGIN)e.setCancelled(true);}
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void command(PlayerCommandPreprocessEvent e){if(locked(e.getPlayer())){String c=e.getMessage().split(" ",2)[0].substring(1);if(!PacketPolicy.allowCommand(c)){e.setCancelled(true);e.getPlayer().sendMessage(msg(e.getPlayer(),"blocked"));}}}
  @EventHandler(priority=EventPriority.LOWEST,ignoreCancelled=false) public void chat(AsyncPlayerChatEvent e){if(!locked(e.getPlayer()))return;e.setCancelled(true);Player player=e.getPlayer();Session session=sessions.get(player.getUniqueId());if(session==null||!secureInput.shouldCapture(player.getUniqueId(),session.auth))return;String input=e.getMessage();Bukkit.getScheduler().runTask(this,()->consumeSecureInput(session,input));}
- @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void interact(PlayerInteractEvent e){if(locked(e.getPlayer()))e.setCancelled(true);}
- @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void interactEntity(PlayerInteractEntityEvent e){if(locked(e.getPlayer()))e.setCancelled(true);}
+ @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=false) public void interact(PlayerInteractEvent e){if(interactiveCaptcha!=null&&interactiveCaptcha.active(e.getPlayer())){if(interactiveCaptcha.interact(e))e.setCancelled(true);return;}if(locked(e.getPlayer()))e.setCancelled(true);}
+ @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=false) public void interactEntity(PlayerInteractEntityEvent e){if(interactiveCaptcha!=null&&interactiveCaptcha.interactEntity(e)){e.setCancelled(true);return;}if(locked(e.getPlayer()))e.setCancelled(true);}
+ @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=false) public void breakBlock(BlockBreakEvent e){if(interactiveCaptcha!=null&&interactiveCaptcha.breakBlock(e.getPlayer(),e.getBlock().getLocation())){e.setCancelled(true);return;}if(locked(e.getPlayer()))e.setCancelled(true);}
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void damage(EntityDamageEvent e){if(e.getEntity() instanceof Player p&&locked(p))e.setCancelled(true);if(e instanceof EntityDamageByEntityEvent hit&&hit.getDamager() instanceof Player p&&locked(p))e.setCancelled(true);}
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void drop(PlayerDropItemEvent e){if(locked(e.getPlayer()))e.setCancelled(true);}
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void pickup(EntityPickupItemEvent e){if(e.getEntity() instanceof Player p&&locked(p))e.setCancelled(true);}
- @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void click(InventoryClickEvent e){if(e.getWhoClicked() instanceof Player p&&locked(p))e.setCancelled(true);}
+ @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=false) public void click(InventoryClickEvent e){if(interactiveCaptcha!=null&&interactiveCaptcha.inventoryClick(e)){e.setCancelled(true);return;}if(e.getWhoClicked() instanceof Player p&&locked(p))e.setCancelled(true);}
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void drag(InventoryDragEvent e){if(e.getWhoClicked() instanceof Player p&&locked(p))e.setCancelled(true);}
- @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void open(InventoryOpenEvent e){if(e.getPlayer() instanceof Player p&&locked(p))e.setCancelled(true);}
+ @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void open(InventoryOpenEvent e){if(e.getPlayer() instanceof Player p&&locked(p)&&(interactiveCaptcha==null||!interactiveCaptcha.active(p)))e.setCancelled(true);}
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void swap(PlayerSwapHandItemsEvent e){if(locked(e.getPlayer()))e.setCancelled(true);}
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void consume(PlayerItemConsumeEvent e){if(locked(e.getPlayer()))e.setCancelled(true);}
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void held(PlayerItemHeldEvent e){if(locked(e.getPlayer()))e.setCancelled(true);}

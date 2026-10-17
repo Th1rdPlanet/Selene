@@ -129,5 +129,14 @@
   "console.ready": "Готово • режим: <role> • вход: <stage> • мир: <world> • диалоги: <dialogs>",
   "console.packets-active": "PacketEvents подключён • защита инвентаря включена • версия: <version>",
   "console.packets-inactive": "Защита инвентаря пакетами выключена • режим: <role>, настройка: <mode>. Для выделенного auth-сервера это нормально.",
-  "console.connection": "Соединение: <target> • адрес: <address>"
+  "console.connection": "Соединение: <target> • адрес: <address>",
+  "interactive-captcha.instructions.break-block": "<aqua>Найдите и сломайте блок угольной руды.</aqua>",
+  "interactive-captcha.instructions.chop-tree": "<aqua>Подойдите к дереву и сломайте бревно.</aqua>",
+  "interactive-captcha.instructions.take-from-chest": "<aqua>Откройте сундук и заберите изумруд.</aqua>",
+  "interactive-captcha.instructions.armor-stand": "<aqua>Подойдите к стойке и снимите нагрудник.</aqua>",
+  "interactive-captcha.instructions.press-button": "<aqua>Найдите и нажмите каменную кнопку.</aqua>",
+  "interactive-captcha.instructions.toggle-lever": "<aqua>Найдите и переключите рычаг.</aqua>",
+  "interactive-captcha.instructions.stand-on-block": "<aqua>Встаньте на золотой блок.</aqua>",
+  "interactive-captcha.instructions.put-in-chest": "<aqua>Положите выданный изумруд в сундук.</aqua>",
+  "interactive-captcha.instructions.item-frame": "<aqua>Подойдите к рамке и нажмите на неё.</aqua>"
 }

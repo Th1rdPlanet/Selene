@@ -46,6 +46,14 @@ class AuthFlowTest {
   assertEquals(AuthStage.WAITING_FOR_CAPTCHA,session.view().stage());
   assertFalse(session.view().busy());
  }
+ @Test void interactiveCaptchaUsesTheSameGuardedStateTransition(){
+  AuthFlow flow=new AuthFlow();AuthSession session=bound(flow);
+  assertTrue(flow.accept(session,"token",AuthReply.status("CAPTCHA_INTERACTIVE","token"),NOW));
+  assertEquals(AuthStage.WAITING_FOR_CAPTCHA,session.view().stage());
+  assertTrue(flow.submitInteractive(session));assertFalse(flow.submitInteractive(session));
+  assertTrue(flow.accept(session,"token",AuthReply.status("REGISTER","token"),NOW));
+  assertEquals(AuthStage.WAITING_FOR_REGISTRATION,session.view().stage());
+ }
 
  @Test void staleCallbackAndWrongSessionTokenAreRejected(){
   AuthFlow flow=new AuthFlow();AuthSession session=atLogin(flow);
