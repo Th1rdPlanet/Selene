@@ -43,12 +43,18 @@ async fn register_login_and_case_normalization() {
 }
 #[tokio::test]
 async fn trusted_password_skips_existing_login_but_not_registration() {
-    let s=service().await;let mut r=request("begin");
-    s.handle(r.clone()).await;r.op="register".into();assert_eq!(s.handle(r.clone()).await.status,"AUTHENTICATED");
-    let mut login=request("begin");login.password_trusted=true;
-    assert_eq!(s.handle(login.clone()).await.status,"AUTHENTICATED");
-    let mut unknown=request("begin");unknown.username="Bob".into();unknown.password_trusted=true;
-    assert_eq!(s.handle(unknown).await.status,"REGISTER");
+    let s = service().await;
+    let mut r = request("begin");
+    s.handle(r.clone()).await;
+    r.op = "register".into();
+    assert_eq!(s.handle(r.clone()).await.status, "AUTHENTICATED");
+    let mut login = request("begin");
+    login.password_trusted = true;
+    assert_eq!(s.handle(login.clone()).await.status, "AUTHENTICATED");
+    let mut unknown = request("begin");
+    unknown.username = "Bob".into();
+    unknown.password_trusted = true;
+    assert_eq!(s.handle(unknown).await.status, "REGISTER");
 }
 #[tokio::test]
 async fn captcha_cannot_be_bypassed_or_reset_by_begin() {
@@ -80,6 +86,38 @@ async fn captcha_cannot_be_bypassed_or_reset_by_begin() {
     r.op = "answer".into();
     assert_eq!(s.handle(r.clone()).await.status, "RATE_LIMITED");
     r.op = "begin".into();
+    assert_eq!(s.handle(r).await.status, "RATE_LIMITED");
+}
+#[tokio::test]
+async fn interactive_begin_reuses_one_bound_nonce() {
+    let s = service().await;
+    let mut r = request("begin");
+    r.captcha_required = true;
+    r.captcha_kind = "INTERACTIVE".into();
+    let first = s.handle(r.clone()).await;
+    assert_eq!(first.status, "CAPTCHA_INTERACTIVE");
+    assert_eq!(first.challenge_nonce.len(), 43);
+    let repeated = s.handle(r.clone()).await;
+    assert_eq!(repeated.challenge_nonce, first.challenge_nonce);
+    r.op = "interactive_complete".into();
+    r.challenge_nonce = "wrong".into();
+    assert_eq!(s.handle(r.clone()).await.status, "INVALID_REQUEST");
+    r.challenge_nonce = first.challenge_nonce;
+    assert_eq!(s.handle(r.clone()).await.status, "REGISTER");
+    assert_eq!(s.handle(r).await.status, "INVALID_REQUEST");
+}
+
+#[tokio::test]
+async fn interactive_mistakes_share_numeric_attempt_budget() {
+    let s = service().await;
+    let mut r = request("begin");
+    r.captcha_required = true;
+    r.captcha_kind = "INTERACTIVE".into();
+    let first = s.handle(r.clone()).await;
+    r.challenge_nonce = first.challenge_nonce;
+    r.op = "interactive_mistake".into();
+    assert_eq!(s.handle(r.clone()).await.status, "CAPTCHA_INTERACTIVE");
+    assert_eq!(s.handle(r.clone()).await.status, "CAPTCHA_INTERACTIVE");
     assert_eq!(s.handle(r).await.status, "RATE_LIMITED");
 }
 #[tokio::test]
@@ -337,10 +375,13 @@ async fn password_and_premium_accounts_require_totp_and_reject_replay() {
 
 #[tokio::test]
 async fn trusted_totp_skips_second_factor_and_reports_it_enabled() {
-    let s=totp_service().await;enable_totp(&s,false).await;
-    let mut login=request("begin");login.password_trusted=true;login.totp_trusted=true;
-    let reply=s.handle(login).await;
-    assert_eq!(reply.status,"AUTHENTICATED");
+    let s = totp_service().await;
+    enable_totp(&s, false).await;
+    let mut login = request("begin");
+    login.password_trusted = true;
+    login.totp_trusted = true;
+    let reply = s.handle(login).await;
+    assert_eq!(reply.status, "AUTHENTICATED");
     assert!(reply.totp_enabled);
 }
 

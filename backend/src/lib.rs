@@ -42,6 +42,8 @@ pub struct Request {
     pub recovery_code: String,
     pub password_trusted: bool,
     pub totp_trusted: bool,
+    pub captcha_kind: String,
+    pub challenge_nonce: String,
 }
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -64,6 +66,7 @@ pub struct Reply {
     pub recovery_codes: Vec<String>,
     pub totp_enabled: bool,
     pub premium_trust: BTreeMap<String, PremiumTrust>,
+    pub challenge_nonce: String,
 }
 impl Reply {
     pub fn status(status: &str, session: &str) -> Self {

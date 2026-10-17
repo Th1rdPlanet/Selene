@@ -10,6 +10,7 @@ use argon2::{
 };
 use base64::Engine;
 use data_encoding::BASE32_NOPAD;
+use rand::{RngCore, rngs::OsRng as RandomOsRng};
 use serde::Deserialize;
 use std::{
     collections::{HashMap, VecDeque},
@@ -104,6 +105,8 @@ pub(crate) struct Session {
     pub(crate) expires: Instant,
     challenge_expires: Instant,
     pub(crate) challenge: Option<Challenge>,
+    captcha_kind: String,
+    challenge_nonce: String,
     attempts: u32,
     second_factor_attempts: u32,
     identity_verified: bool,
@@ -249,6 +252,12 @@ impl Service {
             || r.answer.len() > 32
             || r.totp_code.len() > 64
             || r.recovery_code.len() > 128
+            || r.captcha_kind.len() > 32
+            || r.challenge_nonce.len() > 128
+            || !matches!(
+                r.captcha_kind.as_str(),
+                "" | "DIALOG_FONT" | "MAP" | "INTERACTIVE"
+            )
         {
             return Reply::status("INVALID_REQUEST", &id);
         }
@@ -275,6 +284,11 @@ impl Service {
             if sessions.len() >= self.policy.session_capacity {
                 return Reply::status("BUSY", &id);
             }
+            let interactive = r.captcha_required && r.captcha_kind == "INTERACTIVE";
+            let mut nonce_bytes = [0_u8; 32];
+            if interactive {
+                RandomOsRng.fill_bytes(&mut nonce_bytes);
+            }
             sessions.insert(
                 id.clone(),
                 Session {
@@ -285,10 +299,16 @@ impl Service {
                     totp_trusted: r.totp_trusted,
                     expires: time + Duration::from_secs(self.policy.pending_seconds),
                     challenge_expires: time + Duration::from_secs(self.policy.captcha_seconds),
-                    challenge: if r.captcha_required {
+                    challenge: if r.captcha_required && !interactive {
                         Some(captcha::generate())
                     } else {
                         None
+                    },
+                    captcha_kind: r.captcha_kind.clone(),
+                    challenge_nonce: if interactive {
+                        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(nonce_bytes)
+                    } else {
+                        String::new()
                     },
                     attempts: 0,
                     second_factor_attempts: 0,
@@ -354,6 +374,8 @@ impl Service {
             r.op.as_str(),
             "begin"
                 | "answer"
+                | "interactive_mistake"
+                | "interactive_complete"
                 | "login"
                 | "register"
                 | "totp_verify"
@@ -373,6 +395,42 @@ impl Service {
             return self.verify_login_totp(s, &r, &id, time).await;
         }
         if r.op.starts_with("totp_") || r.op == "premium_trust" {
+            return Reply::status("INVALID_REQUEST", &id);
+        }
+        if !s.challenge_nonce.is_empty() {
+            if s.captcha_kind != "INTERACTIVE" {
+                return Reply::status("INVALID_REQUEST", &id);
+            }
+            if time >= s.challenge_expires {
+                return Reply::status("EXPIRED", &id);
+            }
+            if r.op == "begin" {
+                let mut reply = Reply::status("CAPTCHA_INTERACTIVE", &id);
+                reply.challenge_nonce = s.challenge_nonce.clone();
+                return reply;
+            }
+            if !matches!(
+                r.op.as_str(),
+                "interactive_mistake" | "interactive_complete"
+            ) || !constant_time_eq(r.challenge_nonce.as_bytes(), s.challenge_nonce.as_bytes())
+            {
+                return Reply::status("INVALID_REQUEST", &id);
+            }
+            if r.op == "interactive_mistake" {
+                s.attempts += 1;
+                if s.attempts >= self.policy.max_attempts {
+                    return Reply::status("RATE_LIMITED", &id);
+                }
+                let mut reply = Reply::status("CAPTCHA_INTERACTIVE", &id);
+                reply.challenge_nonce = s.challenge_nonce.clone();
+                return reply;
+            }
+            s.challenge_nonce.clear();
+            r.op = "answer".into();
+        } else if matches!(
+            r.op.as_str(),
+            "interactive_mistake" | "interactive_complete"
+        ) {
             return Reply::status("INVALID_REQUEST", &id);
         }
         if let Some(c) = &s.challenge {
@@ -419,7 +477,11 @@ impl Service {
             }
             return self.finish_identity(s, &id, time).await;
         }
-        if s.password_trusted && account.as_ref().is_some_and(|a| !a.premium && !a.hash.is_empty()) {
+        if s.password_trusted
+            && account
+                .as_ref()
+                .is_some_and(|a| !a.premium && !a.hash.is_empty())
+        {
             return self.finish_identity(s, &id, time).await;
         }
         if matches!(r.op.as_str(), "begin" | "answer") {
@@ -527,8 +589,8 @@ impl Service {
             match self.storage.totp_state(&s.name).await {
                 Ok(Some(_)) => {
                     if s.totp_trusted {
-                        let mut reply=authenticate(s,id,time,&self.policy);
-                        reply.totp_enabled=true;
+                        let mut reply = authenticate(s, id, time, &self.policy);
+                        reply.totp_enabled = true;
                         return reply;
                     }
                     s.identity_verified = true;
@@ -566,8 +628,8 @@ impl Service {
         {
             Ok(()) => {
                 s.second_factor_attempts = 0;
-                let mut reply=authenticate(s, id, time, &self.policy);
-                reply.totp_enabled=true;
+                let mut reply = authenticate(s, id, time, &self.policy);
+                reply.totp_enabled = true;
                 reply
             }
             Err(status) => {
@@ -769,6 +831,16 @@ impl Service {
             Err(_) => Err("UNAVAILABLE"),
         }
     }
+}
+
+fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
+    if left.len() != right.len() {
+        return false;
+    }
+    left.iter()
+        .zip(right)
+        .fold(0_u8, |diff, (a, b)| diff | (a ^ b))
+        == 0
 }
 
 fn authenticate(s: &mut Session, id: &str, time: Instant, policy: &Policy) -> Reply {
