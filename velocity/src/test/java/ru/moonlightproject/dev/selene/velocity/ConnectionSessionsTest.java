@@ -96,4 +96,21 @@ class ConnectionSessionsTest {
             UUID.randomUUID(), "Second", InetAddress.getByName("192.0.2.2"), false, false));
         assertEquals(1, sessions.size());
     }
+
+    @Test void paperMaySelectKnownCaptchaKindForBegin() throws Exception {
+        ConnectionSessions sessions=new ConnectionSessions(4);UUID connection=UUID.randomUUID();
+        ConnectionSessions.Session session=sessions.open(connection,"Player_1",InetAddress.getLoopbackAddress(),false,true).session();
+        AuthRequest request=new AuthRequest("begin",session.id().toString(),"","","","",false,false,"","",false,false,"INTERACTIVE","");
+        assertEquals("INTERACTIVE",sessions.authorizeRelay(connection,request).orElseThrow().captchaKind());
+    }
+
+    @Test void interactiveOperationRequiresCurrentSessionAndNonce() throws Exception {
+        ConnectionSessions sessions=new ConnectionSessions(4);UUID connection=UUID.randomUUID();
+        ConnectionSessions.Session session=sessions.open(connection,"Player_1",InetAddress.getLoopbackAddress(),false,true).session();
+        AuthRequest empty=new AuthRequest("interactive_complete",session.id().toString(),"","","","",false,false);
+        assertTrue(sessions.authorizeRelay(connection,empty).isEmpty());
+        AuthRequest valid=new AuthRequest("interactive_complete",session.id().toString(),"forged","203.0.113.1","","",true,false,"","",false,false,"","nonce");
+        AuthRequest bound=sessions.authorizeRelay(connection,valid).orElseThrow();
+        assertEquals("Player_1",bound.username());assertFalse(bound.premium());assertEquals("nonce",bound.challengeNonce());
+    }
 }

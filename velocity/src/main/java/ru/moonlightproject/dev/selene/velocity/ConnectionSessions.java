@@ -84,7 +84,8 @@ final class ConnectionSessions {
             request.op(), session.id().toString(), session.username(),
             session.address().getHostAddress(), request.password(), request.answer(),
             session.premium(), session.captchaRequired(), request.totpCode(), request.recoveryCode(),
-            session.passwordTrusted(), session.totpTrusted()));
+            session.passwordTrusted(), session.totpTrusted(), request.captchaKind(),
+            request.challengeNonce()));
     }
 
     synchronized boolean observeReply(UUID connectionId, UUID sessionId, AuthReply reply) {
@@ -135,7 +136,8 @@ final class ConnectionSessions {
 
     private boolean allowedRelayOperation(UUID connectionId, String operation) {
         return switch (operation) {
-            case "begin", "answer", "register", "login", "close" -> true;
+            case "begin", "answer", "register", "login", "close", "interactive_mistake",
+                 "interactive_complete" -> true;
             case "totp_verify" -> awaitingSecondFactor.contains(connectionId);
             case "premium_trust" -> authenticated.contains(connectionId);
             case "totp_status", "totp_setup_begin", "totp_setup_confirm", "totp_disable",
@@ -150,11 +152,15 @@ final class ConnectionSessions {
         boolean answer = !request.answer().isEmpty();
         boolean totp = !request.totpCode().isEmpty();
         boolean recovery = !request.recoveryCode().isEmpty();
+        boolean kind = !request.captchaKind().isEmpty();
+        boolean nonce = !request.challengeNonce().isEmpty();
         if (password && !Set.of("register", "login").contains(request.op())) return false;
         if (answer && !request.op().equals("answer")) return false;
         if (totp && !Set.of("totp_verify", "totp_setup_confirm", "totp_disable",
             "totp_recovery_regenerate").contains(request.op())) return false;
         if (recovery && !Set.of("totp_verify", "totp_disable").contains(request.op())) return false;
+        if (kind && !request.op().equals("begin")) return false;
+        if (nonce != Set.of("interactive_mistake", "interactive_complete").contains(request.op())) return false;
         return true;
     }
 
