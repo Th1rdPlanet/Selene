@@ -3,15 +3,15 @@ package ru.moonlightproject.dev.selene.paper;
 import java.util.*;
 import org.bukkit.configuration.ConfigurationSection;
 
-record InteractiveCaptchaConfig(String world,int timeoutSeconds,int maxMistakes,int arenaSpacing,
+public record InteractiveCaptchaConfig(String world,int timeoutSeconds,int maxMistakes,int arenaSpacing,
     Isolation isolation,Platform platform,Generation generation,Map<String,ScenarioConfig> scenarios) {
- enum FloorPattern { SOLID,RANDOM,CHECKERBOARD }
- record Isolation(boolean hidePlayers,boolean hideTabList,boolean hideNameTags,boolean suppressChat){}
- record Platform(int width,int length,FloorPattern floorPattern,List<String> floorMaterials,String boundaryMaterial){}
- record Generation(int attempts,int minTargetDistance,int decoys){}
- record ScenarioConfig(boolean enabled,int weight){}
+ public enum FloorPattern { SOLID,RANDOM,CHECKERBOARD }
+ public record Isolation(boolean hidePlayers,boolean hideTabList,boolean hideNameTags,boolean suppressChat){}
+ public record Platform(int width,int length,FloorPattern floorPattern,List<String> floorMaterials,String boundaryMaterial){}
+ public record Generation(int attempts,int minTargetDistance,int decoys){}
+ public record ScenarioConfig(boolean enabled,int weight){}
 
- static InteractiveCaptchaConfig parse(ConfigurationSection root){
+ public static InteractiveCaptchaConfig parse(ConfigurationSection root){
   if(root==null)throw new IllegalArgumentException("Missing Paper setting: interactive-captcha");
   String world=text(root,"world");
   int timeout=bounded(root,"timeout-seconds",10,300);
