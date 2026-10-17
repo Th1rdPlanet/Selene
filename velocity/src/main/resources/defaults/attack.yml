@@ -46,6 +46,9 @@ normal-captcha: false
 # suspicious-only включает её только для подозрительных IP; premium-bypass освобождает
 # проверенный лицензионный аккаунт от CAPTCHA; greenlist-only закрывает вход всем, кроме
 # совпавшей пары ник+IP; reconnect-limit включает ограничение повторных входов.
+# Окна grace задаются отдельно для каждого уровня и успешной пары ник+IP.
+# Пока окно активно, соответствующая проверка не запрашивается повторно.
+# 0 = требовать проверку при каждом новом подключении; максимум 86400 секунд.
 profiles:
   normal:
     captcha: false
@@ -53,24 +56,36 @@ profiles:
     suspicious-only: false
     greenlist-only: false
     reconnect-limit: false
+    password-grace-seconds: 300
+    captcha-grace-seconds: 300
+    totp-grace-seconds: 300
   low:
     captcha: true
     premium-bypass: true
     suspicious-only: true
     greenlist-only: false
     reconnect-limit: false
+    password-grace-seconds: 120
+    captcha-grace-seconds: 120
+    totp-grace-seconds: 120
   medium:
     captcha: true
     premium-bypass: false
     suspicious-only: false
     greenlist-only: false
     reconnect-limit: true
+    password-grace-seconds: 0
+    captcha-grace-seconds: 0
+    totp-grace-seconds: 0
   strong:
     captcha: false
     premium-bypass: true
     suspicious-only: false
     greenlist-only: true
     reconnect-limit: true
+    password-grace-seconds: 0
+    captcha-grace-seconds: 0
+    totp-grace-seconds: 0
 # Используется при MEDIUM: не больше N входов с IP за указанное окно.
 per-ip-limit: 3
 # Окно ограничения повторных входов с IP, секунды.

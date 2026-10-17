@@ -33,6 +33,8 @@ class VelocityConfigTest {
         assertTrue(config.premiumTrustEnabled());
         assertEquals(java.time.Duration.ofDays(30), config.premiumTrustTtl());
         assertEquals("2fa", config.twoFactorCommandAliases());
+        assertEquals(java.time.Duration.ofSeconds(300), config.attackProfiles().get(ru.moonlightproject.dev.selene.core.AttackLevel.NORMAL).passwordGrace());
+        assertEquals(java.time.Duration.ZERO, config.attackProfiles().get(ru.moonlightproject.dev.selene.core.AttackLevel.MEDIUM).captchaGrace());
     }
 
     @Test
@@ -83,6 +85,10 @@ class VelocityConfigTest {
             session-capacity=4096
             per-ip-limit=3
             per-ip-window-seconds=10
+            profiles.normal.password-grace-seconds=300
+            profiles.normal.captcha-grace-seconds=120
+            profiles.normal.totp-grace-seconds=300
+            profiles.medium.captcha-grace-seconds=0
             message.denied=Access denied
             message.busy=Authentication busy
             message.strong=Only trusted addresses are admitted

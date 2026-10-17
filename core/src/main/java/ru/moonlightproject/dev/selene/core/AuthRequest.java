@@ -1,6 +1,7 @@
 package ru.moonlightproject.dev.selene.core;
 public record AuthRequest(String op, String session, String username, String ip, String password,
-    String answer, boolean premium, boolean captchaRequired, String totpCode, String recoveryCode) {
+    String answer, boolean premium, boolean captchaRequired, String totpCode, String recoveryCode,
+    boolean passwordTrusted, boolean totpTrusted) {
   public AuthRequest {
     op = s(op);
     session = s(session);
@@ -12,7 +13,9 @@ public record AuthRequest(String op, String session, String username, String ip,
     recoveryCode = bounded(recoveryCode, 128, "recoveryCode");
   }
   public AuthRequest(String op,String session,String username,String ip,String password,String answer,
-      boolean premium,boolean captchaRequired){this(op,session,username,ip,password,answer,premium,captchaRequired,"","");}
+      boolean premium,boolean captchaRequired){this(op,session,username,ip,password,answer,premium,captchaRequired,"","",false,false);}
+  public AuthRequest(String op,String session,String username,String ip,String password,String answer,
+      boolean premium,boolean captchaRequired,String totpCode,String recoveryCode){this(op,session,username,ip,password,answer,premium,captchaRequired,totpCode,recoveryCode,false,false);}
   private static String s(String v) {
     return v == null ? "" : v;
   }

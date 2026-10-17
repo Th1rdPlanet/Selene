@@ -99,6 +99,8 @@ pub(crate) struct Session {
     name: String,
     ip: String,
     premium: bool,
+    password_trusted: bool,
+    totp_trusted: bool,
     pub(crate) expires: Instant,
     challenge_expires: Instant,
     pub(crate) challenge: Option<Challenge>,
@@ -279,6 +281,8 @@ impl Service {
                     name: r.username.clone(),
                     ip: r.ip.clone(),
                     premium: r.premium,
+                    password_trusted: r.password_trusted,
+                    totp_trusted: r.totp_trusted,
                     expires: time + Duration::from_secs(self.policy.pending_seconds),
                     challenge_expires: time + Duration::from_secs(self.policy.captcha_seconds),
                     challenge: if r.captcha_required {
@@ -415,6 +419,9 @@ impl Service {
             }
             return self.finish_identity(s, &id, time).await;
         }
+        if s.password_trusted && account.as_ref().is_some_and(|a| !a.premium && !a.hash.is_empty()) {
+            return self.finish_identity(s, &id, time).await;
+        }
         if matches!(r.op.as_str(), "begin" | "answer") {
             return Reply::status(
                 if account
@@ -519,6 +526,11 @@ impl Service {
         if self.totp.is_some() {
             match self.storage.totp_state(&s.name).await {
                 Ok(Some(_)) => {
+                    if s.totp_trusted {
+                        let mut reply=authenticate(s,id,time,&self.policy);
+                        reply.totp_enabled=true;
+                        return reply;
+                    }
                     s.identity_verified = true;
                     s.second_factor_attempts = 0;
                     let mut reply = Reply::status("TOTP_REQUIRED", id);
@@ -554,7 +566,9 @@ impl Service {
         {
             Ok(()) => {
                 s.second_factor_attempts = 0;
-                authenticate(s, id, time, &self.policy)
+                let mut reply=authenticate(s, id, time, &self.policy);
+                reply.totp_enabled=true;
+                reply
             }
             Err(status) => {
                 s.second_factor_attempts += 1;

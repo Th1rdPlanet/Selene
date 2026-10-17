@@ -110,6 +110,7 @@ public final class SeleneVelocityPlugin {
                     config.outboundPacketsMedium(),config.outboundPacketsStrong(),config.outboundBytesLow(),
                     config.outboundBytesMedium(),config.outboundBytesStrong());
                 ConnectionSessions sessions = new ConnectionSessions(config.sessionCapacity());
+                AuthenticationGraceCache authenticationGrace = new AuthenticationGraceCache(config.sessionCapacity());
                 TwoFactorRoutes twoFactorRoutes = new TwoFactorRoutes(config.sessionCapacity());
                 ConnectionIdentities<Player> identities = new ConnectionIdentities<>(config.sessionCapacity());
                 PremiumLookup premiumLookup = PremiumLookup.mojang(
@@ -122,7 +123,7 @@ public final class SeleneVelocityPlugin {
                     tls, config.relayBind(), Duration.ofSeconds(3), 64,
                     (request, fingerprint) -> relay(request, fingerprint));
                 runtime = new RuntimeState(
-                    config, messages, backend, admission, attacks, sessions, identities, premiumLookup,
+                    config, messages, backend, admission, attacks, sessions, authenticationGrace, identities, premiumLookup,
                     premiumTrust, twoFactorRoutes, relay, fork, new ProtectionState(
                         change -> logger.info(messages.plain("protection-change",
                             VelocityMessages.literal("previous",change.previous().name()),VelocityMessages.literal("current",change.current().name()),
@@ -219,13 +220,15 @@ public final class SeleneVelocityPlugin {
         boolean suspicious = state.fork().suspicious(player.getUsername(), ip)
             || state.attacks().suspicious(ip, now);
         boolean premium = player.isOnlineMode() || trustedPremium;
-        boolean captcha = profile.captcha(premium, suspicious);
+        AuthenticationGraceCache.Decision grace=state.authenticationGrace().decision(
+            player.getUsername(),player.getRemoteAddress().getAddress(),profile);
+        boolean captcha = profile.captcha(premium, suspicious) && !grace.captcha();
         ConnectionSessions.Session session;
         try {
             UUID connectionId = state.identities().open(player);
             ConnectionSessions.Opened opened = state.sessions().open(
                 connectionId, player.getUsername(), player.getRemoteAddress().getAddress(),
-                premium, captcha);
+                premium, captcha, !premium && grace.password(), grace.totp());
             session = opened.session();
             if (player.isOnlineMode()) onlineProofConnections.add(connectionId);
             if (opened.replaced() != null) closeReplacedSession(state, opened.replaced());
@@ -380,6 +383,9 @@ public final class SeleneVelocityPlugin {
         Optional<UUID> connection = state == null ? Optional.empty() : state.identities().get(player);
         if (state == null || !reply.status().equals("AUTHENTICATED") || connection.isEmpty()
             || !state.sessions().isCurrent(connection.get(), session.id())) return;
+        state.authenticationGrace().remember(session.username(),session.address(),
+            !session.premium()&&!session.passwordTrusted(),session.captchaRequired(),
+            reply.totpEnabled()&&!session.totpTrusted());
         authenticated.add(connection.get());
         if (onlineProofConnections.remove(connection.get()) && session.premium()) {
             state.backend().call(boundRequest("premium_trust", session, "", ""))
@@ -525,6 +531,8 @@ public final class SeleneVelocityPlugin {
         RuntimeState state = runtime;
         if (state == null) return;
         state.sessions().revokeManagement(connection);
+        state.sessions().get(connection).ifPresent(session ->
+            state.authenticationGrace().invalidate(session.username(),session.address()));
         state.twoFactorRoutes().complete(connection).ifPresent(route ->
             proxy.getServer(route.previousServer()).or(() -> proxy.getServer(state.config().defaultServer()))
                 .ifPresent(server -> player.createConnectionRequest(server).fireAndForget()));
@@ -547,7 +555,8 @@ public final class SeleneVelocityPlugin {
     ) {
         return new AuthRequest(
             operation, session.id().toString(), session.username(), session.address().getHostAddress(),
-            password, answer, session.premium(), session.captchaRequired());
+            password, answer, session.premium(), session.captchaRequired(), "", "",
+            session.passwordTrusted(), session.totpTrusted());
     }
 
     private ForkCapabilities findForkCapabilities() {
@@ -606,6 +615,7 @@ public final class SeleneVelocityPlugin {
         AdmissionPolicy admission,
         AutoAttackController attacks,
         ConnectionSessions sessions,
+        AuthenticationGraceCache authenticationGrace,
         ConnectionIdentities<Player> identities,
         PremiumLookup premiumLookup,
         PremiumTrustCache premiumTrust,

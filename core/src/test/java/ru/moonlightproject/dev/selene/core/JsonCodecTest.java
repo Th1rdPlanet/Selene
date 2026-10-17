@@ -10,10 +10,12 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class JsonCodecTest {
  @Test void secondFactorRequestRoundTripsWithoutLeakingCredentials(){
-  AuthRequest request=new AuthRequest("totp_verify","session","VicTim","127.0.0.1","password","captcha",false,true,"123456","ABCD-EFGH");
+  AuthRequest request=new AuthRequest("totp_verify","session","VicTim","127.0.0.1","password","captcha",false,true,"123456","ABCD-EFGH",true,true);
   AuthRequest decoded=JsonCodec.request(JsonCodec.encode(request));
   assertEquals("123456",decoded.totpCode());
   assertEquals("ABCD-EFGH",decoded.recoveryCode());
+  assertTrue(decoded.passwordTrusted());
+  assertTrue(decoded.totpTrusted());
   assertFalse(request.toString().contains("password"));
   assertFalse(request.toString().contains("captcha"));
   assertFalse(request.toString().contains("123456"));

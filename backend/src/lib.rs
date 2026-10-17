@@ -40,6 +40,8 @@ pub struct Request {
     pub captcha_required: bool,
     pub totp_code: String,
     pub recovery_code: String,
+    pub password_trusted: bool,
+    pub totp_trusted: bool,
 }
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

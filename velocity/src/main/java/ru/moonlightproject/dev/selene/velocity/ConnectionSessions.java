@@ -22,7 +22,9 @@ final class ConnectionSessions {
         String canonicalUsername,
         InetAddress address,
         boolean premium,
-        boolean captchaRequired
+        boolean captchaRequired,
+        boolean passwordTrusted,
+        boolean totpTrusted
     ) {}
     record Opened(Session session, Session replaced) {}
 
@@ -51,6 +53,10 @@ final class ConnectionSessions {
         boolean premium,
         boolean captchaRequired
     ) {
+        return open(connectionId, username, address, premium, captchaRequired, false, false);
+    }
+    synchronized Opened open(UUID connectionId,String username,InetAddress address,boolean premium,
+        boolean captchaRequired,boolean passwordTrusted,boolean totpTrusted) {
         if (!byConnection.containsKey(connectionId) && byConnection.size() >= capacity) {
             throw new IllegalStateException("authentication session capacity reached");
         }
@@ -61,7 +67,8 @@ final class ConnectionSessions {
         if (replaced != null) clearAuthorization(previousConnection);
         clearAuthorization(connectionId);
         Session session = new Session(
-            UUID.randomUUID(), connectionId, username, canonical, address, premium, captchaRequired);
+            UUID.randomUUID(), connectionId, username, canonical, address, premium, captchaRequired,
+            passwordTrusted, totpTrusted);
         byConnection.put(connectionId, session);
         return new Opened(session, replaced);
     }
@@ -76,7 +83,8 @@ final class ConnectionSessions {
         return Optional.of(new AuthRequest(
             request.op(), session.id().toString(), session.username(),
             session.address().getHostAddress(), request.password(), request.answer(),
-            session.premium(), session.captchaRequired(), request.totpCode(), request.recoveryCode()));
+            session.premium(), session.captchaRequired(), request.totpCode(), request.recoveryCode(),
+            session.passwordTrusted(), session.totpTrusted()));
     }
 
     synchronized boolean observeReply(UUID connectionId, UUID sessionId, AuthReply reply) {

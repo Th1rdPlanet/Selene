@@ -42,6 +42,15 @@ async fn register_login_and_case_normalization() {
     assert_eq!(s.handle(r).await.status, "AUTHENTICATED");
 }
 #[tokio::test]
+async fn trusted_password_skips_existing_login_but_not_registration() {
+    let s=service().await;let mut r=request("begin");
+    s.handle(r.clone()).await;r.op="register".into();assert_eq!(s.handle(r.clone()).await.status,"AUTHENTICATED");
+    let mut login=request("begin");login.password_trusted=true;
+    assert_eq!(s.handle(login.clone()).await.status,"AUTHENTICATED");
+    let mut unknown=request("begin");unknown.username="Bob".into();unknown.password_trusted=true;
+    assert_eq!(s.handle(unknown).await.status,"REGISTER");
+}
+#[tokio::test]
 async fn captcha_cannot_be_bypassed_or_reset_by_begin() {
     let s = service().await;
     let mut r = request("begin");
@@ -324,6 +333,15 @@ async fn password_and_premium_accounts_require_totp_and_reject_replay() {
     let mut original = request("begin");
     original.premium = true;
     assert_eq!(premium.handle(original).await.status, "TOTP_REQUIRED");
+}
+
+#[tokio::test]
+async fn trusted_totp_skips_second_factor_and_reports_it_enabled() {
+    let s=totp_service().await;enable_totp(&s,false).await;
+    let mut login=request("begin");login.password_trusted=true;login.totp_trusted=true;
+    let reply=s.handle(login).await;
+    assert_eq!(reply.status,"AUTHENTICATED");
+    assert!(reply.totp_enabled);
 }
 
 #[tokio::test]

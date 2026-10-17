@@ -45,6 +45,18 @@ class ConnectionSessionsTest {
     }
 
     @Test
+    void relayCannotForgeGraceFlags() throws Exception {
+        ConnectionSessions sessions=new ConnectionSessions(16);UUID connection=UUID.randomUUID();
+        ConnectionSessions.Session session=sessions.open(connection,"Player_1",
+            InetAddress.getByName("198.51.100.7"),false,false,true,false).session();
+        AuthRequest forged=new AuthRequest("begin",session.id().toString(),"Player_1","198.51.100.7",
+            "","",false,false,"","",false,true);
+        AuthRequest bound=sessions.authorizeRelay(connection,forged).orElseThrow();
+        assertTrue(bound.passwordTrusted());
+        assertFalse(bound.totpTrusted());
+    }
+
+    @Test
     void staleRelayRequestCannotAuthenticateReplacementConnection() throws Exception {
         ConnectionSessions sessions = new ConnectionSessions(16);
         ConnectionSessions.Session oldSession = sessions.open(

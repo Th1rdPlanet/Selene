@@ -75,10 +75,10 @@ record VelocityConfig(
         "pending-sessions-medium", "pending-sessions-strong",
         "outbound-packets-low-per-second", "outbound-packets-medium-per-second", "outbound-packets-strong-per-second",
         "outbound-bytes-low-per-second", "outbound-bytes-medium-per-second", "outbound-bytes-strong-per-second",
-        "profiles.normal.captcha", "profiles.normal.premium-bypass", "profiles.normal.suspicious-only", "profiles.normal.greenlist-only", "profiles.normal.reconnect-limit",
-        "profiles.low.captcha", "profiles.low.premium-bypass", "profiles.low.suspicious-only", "profiles.low.greenlist-only", "profiles.low.reconnect-limit",
-        "profiles.medium.captcha", "profiles.medium.premium-bypass", "profiles.medium.suspicious-only", "profiles.medium.greenlist-only", "profiles.medium.reconnect-limit",
-        "profiles.strong.captcha", "profiles.strong.premium-bypass", "profiles.strong.suspicious-only", "profiles.strong.greenlist-only", "profiles.strong.reconnect-limit",
+        "profiles.normal.captcha", "profiles.normal.premium-bypass", "profiles.normal.suspicious-only", "profiles.normal.greenlist-only", "profiles.normal.reconnect-limit", "profiles.normal.password-grace-seconds", "profiles.normal.captcha-grace-seconds", "profiles.normal.totp-grace-seconds",
+        "profiles.low.captcha", "profiles.low.premium-bypass", "profiles.low.suspicious-only", "profiles.low.greenlist-only", "profiles.low.reconnect-limit", "profiles.low.password-grace-seconds", "profiles.low.captcha-grace-seconds", "profiles.low.totp-grace-seconds",
+        "profiles.medium.captcha", "profiles.medium.premium-bypass", "profiles.medium.suspicious-only", "profiles.medium.greenlist-only", "profiles.medium.reconnect-limit", "profiles.medium.password-grace-seconds", "profiles.medium.captcha-grace-seconds", "profiles.medium.totp-grace-seconds",
+        "profiles.strong.captcha", "profiles.strong.premium-bypass", "profiles.strong.suspicious-only", "profiles.strong.greenlist-only", "profiles.strong.reconnect-limit", "profiles.strong.password-grace-seconds", "profiles.strong.captcha-grace-seconds", "profiles.strong.totp-grace-seconds",
         "premium-lookup-enabled", "premium-lookup-timeout-millis",
         "premium-lookup-cache-capacity", "premium-lookup-cache-seconds",
         "premium-lookup-concurrency", "premium-trust-enabled", "premium-trust-ttl-days",
@@ -183,19 +183,22 @@ record VelocityConfig(
 
     private static Map<AttackLevel, AttackProfile> profiles(Properties properties) {
         var result = new java.util.EnumMap<AttackLevel, AttackProfile>(AttackLevel.class);
-        result.put(AttackLevel.NORMAL, profile(properties,"normal",bool(properties,"normal-captcha"),true,false,false,false));
-        result.put(AttackLevel.LOW, profile(properties,"low",true,true,true,false,false));
-        result.put(AttackLevel.MEDIUM, profile(properties,"medium",true,false,false,false,true));
-        result.put(AttackLevel.STRONG, profile(properties,"strong",false,true,false,true,true));
+        result.put(AttackLevel.NORMAL, profile(properties,"normal",bool(properties,"normal-captcha"),true,false,false,false,300));
+        result.put(AttackLevel.LOW, profile(properties,"low",true,true,true,false,false,120));
+        result.put(AttackLevel.MEDIUM, profile(properties,"medium",true,false,false,false,true,0));
+        result.put(AttackLevel.STRONG, profile(properties,"strong",false,true,false,true,true,0));
         return Map.copyOf(result);
     }
 
     private static AttackProfile profile(Properties properties,String name,boolean captcha,boolean premium,
-                                         boolean suspicious,boolean greenlist,boolean reconnect) {
+                                         boolean suspicious,boolean greenlist,boolean reconnect,int graceDefault) {
         String prefix="profiles."+name+".";
         return new AttackProfile(bool(properties,prefix+"captcha",captcha),bool(properties,prefix+"premium-bypass",premium),
             bool(properties,prefix+"suspicious-only",suspicious),bool(properties,prefix+"greenlist-only",greenlist),
-            bool(properties,prefix+"reconnect-limit",reconnect));
+            bool(properties,prefix+"reconnect-limit",reconnect),
+            Duration.ofSeconds(nonNegative(properties,prefix+"password-grace-seconds",graceDefault,86400)),
+            Duration.ofSeconds(nonNegative(properties,prefix+"captcha-grace-seconds",graceDefault,86400)),
+            Duration.ofSeconds(nonNegative(properties,prefix+"totp-grace-seconds",graceDefault,86400)));
     }
 
     private static int positive(Properties properties, String key) {
@@ -207,6 +210,11 @@ record VelocityConfig(
     private static int bounded(Properties properties,String key,int fallback,int maximum) {
         int value=positive(properties,key,fallback);
         if(value>maximum)throw new IllegalArgumentException("Setting is too large: "+key);
+        return value;
+    }
+    private static int nonNegative(Properties properties,String key,int fallback,int maximum){
+        int value=properties.containsKey(key)?Integer.parseInt(required(properties,key)):fallback;
+        if(value<0||value>maximum)throw new IllegalArgumentException("Setting must be between 0 and "+maximum+": "+key);
         return value;
     }
     private static String aliases(String value) {
