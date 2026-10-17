@@ -47,6 +47,13 @@ final class AuthDialogs {
   player.showDialog(Dialog.create(factory->factory.empty().base(base).type(buttonType(buttonBuilder.build(),config,path))));
  }
 
+ static void totp(Player player,AuthMessages messages,ConfigurationSection config,Consumer<String> submit){
+  var code=input(messages,config,"totp","code");
+  player.showDialog(dialog(messages,config,"totp",List.of(code),(view,audience)->{
+   if(audience==player)submit.accept(view.getText("code"));
+  }));
+ }
+
  private static io.papermc.paper.registry.data.dialog.input.TextDialogInput input(AuthMessages messages,ConfigurationSection config,String screen,String field){
   String path="dialogs."+screen+"."+field;
   return DialogInput.text(field,messages.component(path+".label")).width(config.getInt(path+".width",300)).labelVisible(config.getBoolean(path+".label-visible",true)).maxLength(config.getInt(path+".max-length",256)).build();

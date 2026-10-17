@@ -32,5 +32,12 @@ final class AuthInputValidation {
   return value!=null&&value.matches("[0-9]{6}")?ValidationResult.success():ValidationResult.error("totp-format");
  }
 
+ static ValidationResult recovery(String value){
+  if(value==null)return ValidationResult.error("totp-format");
+  String normalized=value.replace("-","").replaceAll("\\s+","").toUpperCase(java.util.Locale.ROOT);
+  return normalized.matches("[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{20}")
+   ?ValidationResult.success():ValidationResult.error("totp-format");
+ }
+
  static String messageKeyForStatus(String status){return USER_STATUSES.contains(status)?status:null;}
 }

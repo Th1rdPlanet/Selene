@@ -47,7 +47,7 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
     builtIn=new com.google.gson.Gson().fromJson(reader,new com.google.gson.reflect.TypeToken<Map<String,String>>(){}.getType());
    }
    messages=new AuthMessages(LanguageCatalog.load(getDataFolder().toPath().resolve("languages"),settings.getString("language.default","ru"),settings.getBoolean("language.auto-detect",true),builtIn));
-   for(String key:List.of("unavailable","timeout","blocked","usage","CAPTCHA","CAPTCHA_INVALID","captcha-pack-fallback","captcha-pack-required","LOGIN","REGISTER","AUTHENTICATED","INVALID_CREDENTIALS","ACCOUNT_EXISTS","RATE_LIMITED","BUSY","password-too-short","password-too-long","password-mismatch","captcha-format","INVALID_REQUEST","EXPIRED","UNAVAILABLE","not-ready","secure-command-only","chat-login-prompt","chat-register-prompt","chat-confirm-prompt","dialog-required","admin-console-only","admin-use-velocity","admin-help","admin-invalid-username","admin-list-header","admin-list-row","admin-list-more","admin-info","admin-status-ok","admin-status-not-found","admin-status-invalid-request","admin-status-busy","admin-status-unavailable"))messages.component("messages."+key);
+   for(String key:List.of("unavailable","timeout","blocked","usage","CAPTCHA","CAPTCHA_INVALID","captcha-pack-fallback","captcha-pack-required","LOGIN","REGISTER","AUTHENTICATED","TOTP_REQUIRED","TOTP_INVALID","RECOVERY_INVALID","totp-format","INVALID_CREDENTIALS","ACCOUNT_EXISTS","RATE_LIMITED","BUSY","password-too-short","password-too-long","password-mismatch","captcha-format","INVALID_REQUEST","EXPIRED","UNAVAILABLE","not-ready","secure-command-only","chat-login-prompt","chat-register-prompt","chat-confirm-prompt","chat-totp-prompt","dialog-required","admin-console-only","admin-use-velocity","admin-help","admin-invalid-username","admin-list-header","admin-list-row","admin-list-more","admin-info","admin-status-ok","admin-status-not-found","admin-status-invalid-request","admin-status-busy","admin-status-unavailable"))messages.component("messages."+key);
    if(settings.getBoolean("console.banner",true))for(String line:StartupBanner.lines(getPluginMeta().getVersion(),"Paper"))getLogger().info(line);
    getLogger().info(messages.plain("console.starting"));
    limbo=new LimboManager(this,Objects.requireNonNull(settings.getConfigurationSection("limbo"),"Missing configuration section: limbo"));limbo.load();
@@ -141,9 +141,13 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
   boolean first=existing.isEmpty();if(first&&!flow.bindToken(s.auth,token))return;p.sendPluginMessage(this,SESSION_CHANNEL,message);if(first)request(s,"begin","","");
  }
  private boolean current(Session s){return sessions.get(s.player.getUniqueId())==s&&flow.isCurrent(s.auth)&&s.player.isOnline();}
- private AuthRequest dto(Session s,String op,String password,String answer){return new AuthRequest(op,s.auth.view().sessionId(),s.player.getName(),s.player.getAddress().getAddress().getHostAddress(),password,answer,standalone&&Bukkit.getOnlineMode(),captcha);}
+ private AuthRequest dto(Session s,String op,String password,String answer){return dto(s,op,password,answer,"","");}
+ private AuthRequest dto(Session s,String op,String password,String answer,String totp,String recovery){return new AuthRequest(op,s.auth.view().sessionId(),s.player.getName(),s.player.getAddress().getAddress().getHostAddress(),password,answer,standalone&&Bukkit.getOnlineMode(),captcha,totp,recovery);}
  private void request(Session s,String op,String password,String answer){
-  String requestSession=s.auth.view().sessionId();gateway.call(dto(s,op,password,answer)).whenComplete((reply,error)->{
+  request(s,op,password,answer,"","");
+ }
+ private void request(Session s,String op,String password,String answer,String totp,String recovery){
+  String requestSession=s.auth.view().sessionId();gateway.call(dto(s,op,password,answer,totp,recovery)).whenComplete((reply,error)->{
    if(!isEnabled())return;
    Bukkit.getScheduler().runTask(this,()->{
     if(!current(s))return;
@@ -153,6 +157,8 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
      case "AUTHENTICATED" -> {secureInput.clear(s.player.getUniqueId());if(packetEventsEnabled)inventoryProtection.authenticate(s.inventoryConnection);presentation.restore(s.player,s.snapshot);restoreVisibility(s);releaseMap(s);s.player.updateInventory();limbo.exit(s.player,s.snapshot);s.player.sendMessage(msg(s.player,"AUTHENTICATED"));}
      case "CAPTCHA" -> {s.captchaImage=reply.image();s.captchaGlyphs=reply.captchaGlyphs();showCaptcha(s);}
      case "LOGIN","REGISTER" -> {s.player.sendMessage(msg(s.player,reply.status()));openCredentialInput(s,reply.status());}
+     case "TOTP_REQUIRED" -> {s.player.sendMessage(msg(s.player,"TOTP_REQUIRED"));openTotpInput(s);}
+     case "TOTP_INVALID","RECOVERY_INVALID" -> {s.player.sendMessage(msg(s.player,reply.status()));openTotpInput(s);}
      case "CAPTCHA_INVALID" -> {s.player.sendMessage(msg(s.player,reply.status()));showCaptcha(s);}
      case "RATE_LIMITED","BUSY" -> s.player.sendMessage(msg(s.player,reply.status()));
      case "INVALID_CREDENTIALS","ACCOUNT_EXISTS" -> {s.player.sendMessage(msg(s.player,reply.status()));openCredentialInput(s,"LOGIN");}
@@ -248,13 +254,34 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
  private void consumeSecureInput(Session s,String input){
   if(!current(s))return;SecureChatInput.Result result=secureInput.accept(s.player.getUniqueId(),s.auth,input);
   if(!result.messageKey().isEmpty()){s.player.sendMessage(msg(s.player,result.messageKey()));return;}
-  switch(result.action()){
+ switch(result.action()){
    case CAPTCHA -> submitCaptcha(s,result.secret());
    case LOGIN -> submitLogin(s,result.secret());
    case AWAIT_CONFIRMATION -> s.player.sendMessage(msg(s.player,"chat-confirm-prompt"));
    case REGISTER -> submitRegistration(s,result.secret(),result.confirmation());
+   case TOTP -> submitTotp(s,result.secret(),false);
+   case RECOVERY -> submitTotp(s,result.secret(),true);
    case NONE -> {}
   }
+ }
+
+ private void openTotpInput(Session s){
+  if(!current(s)||s.auth.view().stage()!=AuthStage.WAITING_FOR_TOTP)return;
+  if(dialogCapable)try{
+   AuthDialogs.totp(s.player,messages.forLocale(s.player.getLocale()),settings,
+    code->Bukkit.getScheduler().runTask(this,()->submitTotp(s,code,!AuthInputValidation.totp(code).valid())));
+   return;
+  }catch(LinkageError|RuntimeException error){getLogger().fine("Native TOTP dialog unavailable for "+s.player.getName()+": "+error.getClass().getSimpleName());}
+  secureInput.clear(s.player.getUniqueId());s.player.sendMessage(msg(s.player,"chat-totp-prompt"));
+ }
+
+ private void submitTotp(Session s,String code,boolean recovery){
+  if(!current(s))return;
+  AuthInputValidation.ValidationResult validation=recovery?AuthInputValidation.recovery(code):AuthInputValidation.totp(code);
+  if(!validation.valid()){s.player.sendMessage(msg(s.player,validation.messageKey()));openTotpInput(s);return;}
+  boolean accepted=recovery?flow.submitRecovery(s.auth,code):flow.submitTotp(s.auth,code);
+  if(!accepted){s.player.sendMessage(msg(s.player,"not-ready"));return;}
+  request(s,"totp_verify","","",recovery?"":code,recovery?code:"");
  }
  private void submitLogin(Session s,String password){
   if(!current(s))return;AuthInputValidation.ValidationResult validation=AuthInputValidation.password(password,8,256);if(!validation.valid()){s.player.sendMessage(msg(s.player,validation.messageKey()));openCredentialInput(s,"LOGIN");return;}

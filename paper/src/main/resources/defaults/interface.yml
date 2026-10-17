@@ -91,6 +91,16 @@ dialogs:
       width: 180
       # CONTENT — кнопка сразу под полями ввода; FOOTER — внизу экрана.
       placement: "CONTENT"
+  totp:
+    # Одно поле принимает шесть цифр из приложения или одноразовый recovery-код.
+    body-width: 320
+    code:
+      width: 300
+      label-visible: true
+      max-length: 32
+    button:
+      width: 180
+      placement: "CONTENT"
 # --- Интерфейс авторизации --------------------------------------------------
 # Каждый канал включается отдельно. Во всех текстах работает MiniMessage и
 # плейсхолдер <seconds>. Состояния: connecting, captcha, login, register, processing.

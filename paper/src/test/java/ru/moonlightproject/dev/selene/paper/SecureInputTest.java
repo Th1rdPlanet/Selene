@@ -46,8 +46,22 @@ class SecureInputTest {
   assertFalse(captured.contains(password));assertFalse(captured.contains(captcha));assertTrue(captured.contains("<redacted>"));
  }
 
+ @Test void totpAndRecoveryAreCapturedOnlyInTotpStage(){
+  UUID player=UUID.randomUUID();AuthFlow flow=new AuthFlow();AuthSession session=totp(flow,player);SecureChatInput input=new SecureChatInput();
+  assertTrue(input.shouldCapture(player,session));
+  assertEquals(SecureChatInput.Action.TOTP,input.accept(player,session,"012345").action());
+  assertEquals(SecureChatInput.Action.RECOVERY,input.accept(player,session,"23456-789AB-CDEFG-HJKLM").action());
+  assertEquals("totp-format",input.accept(player,session,"password").messageKey());
+ }
+
+ @Test void redactionCoversTotpAndRecoveryCommands(){
+  assertEquals("/totp <redacted>",SensitiveCommandRedactor.redact("/totp 012345"));
+  assertEquals("/recovery <redacted>",SensitiveCommandRedactor.redact("/recovery 23456-789AB-CDEFG-HJKLM"));
+ }
+
  private static AuthSession captcha(AuthFlow flow){AuthSession session=flow.open(new ConnectionKey(UUID.randomUUID(),new Object()),System.currentTimeMillis()+10_000);flow.bindToken(session,"token");flow.accept(session,"token",AuthReply.status("CAPTCHA","token"),System.currentTimeMillis());return session;}
  private static AuthSession login(AuthFlow flow,UUID player){AuthSession session=flow.open(new ConnectionKey(player,new Object()),System.currentTimeMillis()+10_000);flow.bindToken(session,"token");flow.accept(session,"token",AuthReply.status("LOGIN","token"),System.currentTimeMillis());return session;}
  private static AuthSession registration(AuthFlow flow,UUID player){AuthSession session=flow.open(new ConnectionKey(player,new Object()),System.currentTimeMillis()+10_000);flow.bindToken(session,"token");flow.accept(session,"token",AuthReply.status("REGISTER","token"),System.currentTimeMillis());return session;}
+ private static AuthSession totp(AuthFlow flow,UUID player){AuthSession session=flow.open(new ConnectionKey(player,new Object()),System.currentTimeMillis()+10_000);flow.bindToken(session,"token");flow.accept(session,"token",AuthReply.status("LOGIN","token"),System.currentTimeMillis());flow.submitLogin(session,"password-one");flow.accept(session,"token",AuthReply.status("TOTP_REQUIRED","token"),System.currentTimeMillis());return session;}
  private static String classBytes(Class<?> type){try(InputStream in=type.getResourceAsStream(type.getSimpleName()+".class");ByteArrayOutputStream out=new ByteArrayOutputStream()){assertNotNull(in);in.transferTo(out);return out.toString(StandardCharsets.ISO_8859_1);}catch(Exception e){throw new AssertionError(e);}}
 }

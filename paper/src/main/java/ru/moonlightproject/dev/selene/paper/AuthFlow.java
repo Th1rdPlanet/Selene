@@ -43,6 +43,11 @@ final class AuthFlow {
   return beginRequest(session,AuthStage.WAITING_FOR_TOTP);
  }
 
+ synchronized boolean submitRecovery(AuthSession session,String code){
+  if(!AuthInputValidation.recovery(code).valid()||session.stage!=AuthStage.WAITING_FOR_TOTP)return false;
+  return beginRequest(session,AuthStage.WAITING_FOR_TOTP);
+ }
+
  synchronized boolean accept(AuthSession session,String requestSessionId,AuthReply reply,long nowMillis){
   if(!isCurrent(session)||session.stage==AuthStage.CLOSED||nowMillis>=session.deadlineMillis){
    if(isCurrent(session)&&nowMillis>=session.deadlineMillis)close(session);
