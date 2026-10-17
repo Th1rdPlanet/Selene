@@ -293,16 +293,21 @@ public final class SeleneVelocityPlugin {
 
     @Subscribe
     public void pluginMessage(PluginMessageEvent event) {
-        if (!event.getIdentifier().equals(SESSION_CHANNEL)) return;
+        if (!event.getIdentifier().equals(SESSION_CHANNEL)
+            && !event.getIdentifier().equals(MANAGEMENT_CHANNEL)) return;
         event.setResult(PluginMessageEvent.ForwardResult.handled());
         RuntimeState state = runtime;
         if (state == null || event.getData().length != 16 || !(event.getSource() instanceof ServerConnection source)
             || !source.getServerInfo().getName().equals(state.config().authServer())) return;
         UUID token = uuid(event.getData());
-        state.identities().get(source.getPlayer())
+        Optional<UUID> identity = state.identities().get(source.getPlayer());
+        identity
             .flatMap(state.sessions()::get)
             .filter(session -> session.id().equals(token))
-            .ifPresent(session -> acknowledgedSessionTokens.add(token));
+            .ifPresent(session -> {
+                if (event.getIdentifier().equals(SESSION_CHANNEL)) acknowledgedSessionTokens.add(token);
+                else identity.ifPresent(connection -> finishTwoFactor(source.getPlayer(), connection));
+            });
     }
 
     @Subscribe
@@ -361,9 +366,8 @@ public final class SeleneVelocityPlugin {
             }
             if(Set.of("AUTHENTICATED","CAPTCHA_INVALID","INVALID_CREDENTIALS","RATE_LIMITED").contains(reply.status()))
                 state.attacks().observeAuthentication(!reply.status().equals("AUTHENTICATED"),System.currentTimeMillis());
-            if (reply.status().equals("AUTHENTICATED")) acceptAuthentication(player.get(), state.sessions().get(connection).orElseThrow(), reply);
-            if (Set.of("TOTP_STATUS", "TOTP_RECOVERY", "TOTP_DISABLED", "TOTP_NOT_ENABLED",
-                "TOTP_ALREADY_ENABLED").contains(reply.status())) finishTwoFactor(player.get(), connection);
+            if (reply.status().equals("AUTHENTICATED") && state.twoFactorRoutes().get(connection).isEmpty())
+                acceptAuthentication(player.get(), state.sessions().get(connection).orElseThrow(), reply);
             return reply;
         });
     }

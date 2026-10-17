@@ -42,5 +42,11 @@ class PaperConfigValidatorTest {
   Map<String,Object> invalid=valid();invalid.put("dialogs.login.button.placement","CENTER");
   assertTrue(assertThrows(IllegalArgumentException.class,()->PaperConfigValidator.validate(invalid)).getMessage().contains("dialogs.login.button.placement"));
  }
+ @Test void validatesTotpDialogAndQrBounds(){
+  Map<String,Object> quiet=valid();quiet.put("dialogs.totp-setup.qr-quiet-zone",3);
+  assertTrue(assertThrows(IllegalArgumentException.class,()->PaperConfigValidator.validate(quiet)).getMessage().contains("qr-quiet-zone"));
+  Map<String,Object> code=valid();code.put("dialogs.totp-setup.code.max-length",7);
+  assertTrue(assertThrows(IllegalArgumentException.class,()->PaperConfigValidator.validate(code)).getMessage().contains("code.max-length"));
+ }
  private static Map<String,Object> valid(){Map<String,Object> values=new HashMap<>();values.put("role","PROXY_AUTH");values.put("packet-events-mode","AUTO");values.put("stage","BEFORE_JOIN");values.put("captcha-view","MAP");values.put("dialogs.enabled",true);values.put("timeout-seconds",120);values.put("limbo.mode","MANAGED");values.put("limbo.world","selene_limbo");return values;}
 }

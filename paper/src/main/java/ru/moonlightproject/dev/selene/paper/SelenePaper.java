@@ -25,6 +25,7 @@ import java.util.logging.Level;
 
 public final class SelenePaper extends JavaPlugin implements Listener, PluginMessageListener {
  private static final String SESSION_CHANNEL="selene:session";
+ private static final String MANAGEMENT_CHANNEL="selene:management";
  private final Map<UUID,Session> sessions=new ConcurrentHashMap<>();
  private final Map<UUID,Boolean> resourcePackStatuses=new ConcurrentHashMap<>();
  private final AuthFlow flow=new AuthFlow();
@@ -36,6 +37,7 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
   MapView map;
   ItemStack previousMainHand;
   String captchaImage="",captchaGlyphs=""; Boolean packLoaded; int captchaDisplayGeneration;
+  ManagementRequest management; boolean managementStarted;
   Session(Player p,Object connection,AuthSession auth,PresentationSnapshot snapshot){player=p;inventoryConnection=connection;this.auth=auth;this.snapshot=snapshot;}
  }
  @Override public void onEnable(){
@@ -78,7 +80,12 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
    captcha=standalone&&strictBoolean(props,"captcha-required");
    try{Class.forName("io.papermc.paper.dialog.Dialog");dialogCapable=settings.getBoolean("dialogs.enabled",true);}catch(ClassNotFoundException ignored){}
    getServer().getPluginManager().registerEvents(this,this);
-   if(!standalone){getServer().getMessenger().registerIncomingPluginChannel(this,SESSION_CHANNEL,this);getServer().getMessenger().registerOutgoingPluginChannel(this,SESSION_CHANNEL);}
+   if(!standalone){
+    getServer().getMessenger().registerIncomingPluginChannel(this,SESSION_CHANNEL,this);
+    getServer().getMessenger().registerOutgoingPluginChannel(this,SESSION_CHANNEL);
+    getServer().getMessenger().registerIncomingPluginChannel(this,MANAGEMENT_CHANNEL,this);
+    getServer().getMessenger().registerOutgoingPluginChannel(this,MANAGEMENT_CHANNEL);
+   }
    for(String command:List.of("login","register")){getCommand(command).setExecutor(this);getCommand(command).setTabCompleter((s,c,a,args)->List.of());}
    getCommand("selene").setExecutor(new AccountAdminCommand(this,standalone,adminGateway,messages));getCommand("selene").setTabCompleter((s,c,a,args)->List.of());
    presentationTask=Bukkit.getScheduler().scheduleSyncRepeatingTask(this,()->{long now=System.currentTimeMillis();for(Session session:sessions.values())if(current(session)&&session.auth.view().stage()!=AuthStage.AUTHENTICATED)presentation.render(session.player,session.snapshot,session.auth.view(),now);},20,20);
@@ -113,6 +120,8 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
  sessions.clear();resourcePackStatuses.clear();if(presentationTask!=-1)Bukkit.getScheduler().cancelTask(presentationTask);if(gateway!=null)gateway.close();if(inventoryProtection!=null)inventoryProtection.shutdown();
   getServer().getMessenger().unregisterIncomingPluginChannel(this,SESSION_CHANNEL,this);
   getServer().getMessenger().unregisterOutgoingPluginChannel(this,SESSION_CHANNEL);
+  getServer().getMessenger().unregisterIncomingPluginChannel(this,MANAGEMENT_CHANNEL,this);
+  getServer().getMessenger().unregisterOutgoingPluginChannel(this,MANAGEMENT_CHANNEL);
  }
  private net.kyori.adventure.text.Component msg(Player player,String key){return messages.forLocale(player.getLocale()).component("messages."+key);}
  private boolean locked(Player p){Session s=sessions.get(p.getUniqueId());return s==null||s.auth.view().stage()!=AuthStage.AUTHENTICATED;}
@@ -134,11 +143,19 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
   getLogger().info("Обязательный resource pack отправлен игроку "+s.player.getName()+".");
  }
  @Override public void onPluginMessageReceived(String channel,Player p,byte[] message){
-  if(standalone||!channel.equals(SESSION_CHANNEL)||message.length!=16)return;
+  if(standalone)return;
   Session s=sessions.get(p.getUniqueId());if(s==null||s.player!=p)return;
+  if(channel.equals(MANAGEMENT_CHANNEL)){
+   ManagementRequest.decode(message,s.auth.view().sessionId()).ifPresent(request->{
+    if(s.management==null){s.management=request;startManagement(s);}
+   });
+   return;
+  }
+  if(!channel.equals(SESSION_CHANNEL)||message.length!=16)return;
   var bytes=java.nio.ByteBuffer.wrap(message);String token=new UUID(bytes.getLong(),bytes.getLong()).toString();
   String existing=s.auth.view().sessionId();if(!existing.isEmpty()&&!existing.equals(token))return;
-  boolean first=existing.isEmpty();if(first&&!flow.bindToken(s.auth,token))return;p.sendPluginMessage(this,SESSION_CHANNEL,message);if(first)request(s,"begin","","");
+  boolean first=existing.isEmpty();if(first&&!flow.bindToken(s.auth,token))return;p.sendPluginMessage(this,SESSION_CHANNEL,message);
+  if(first)Bukkit.getScheduler().runTask(this,()->{if(current(s)&&!s.managementStarted){if(s.management==null)request(s,"begin","","");else startManagement(s);}});
  }
  private boolean current(Session s){return sessions.get(s.player.getUniqueId())==s&&flow.isCurrent(s.auth)&&s.player.isOnline();}
  private AuthRequest dto(Session s,String op,String password,String answer){return dto(s,op,password,answer,"","");}
@@ -166,6 +183,68 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
     }
    });
   });
+ }
+ private void startManagement(Session s){
+  if(!current(s)||s.management==null||s.managementStarted)return;
+  s.managementStarted=true;
+  if(!dialogCapable){s.player.sendMessage(msg(s.player,"dialog-required"));completeManagement(s);return;}
+  String operation=s.management.initialOperation();
+  if(!operation.isEmpty())requestManagement(s,operation,"","");
+  else openManagementVerification(s);
+ }
+ private void openManagementVerification(Session s){
+  if(!current(s)||s.management==null)return;
+  if(!dialogCapable){s.player.sendMessage(msg(s.player,"dialog-required"));return;}
+  try{AuthDialogs.totp(s.player,messages.forLocale(s.player.getLocale()),settings,code->Bukkit.getScheduler().runTask(this,()->{
+   boolean recovery=!AuthInputValidation.totp(code).valid();
+   if(s.management.action()==ManagementRequest.Action.RECOVERY&&recovery){s.player.sendMessage(msg(s.player,"totp-format"));openManagementVerification(s);return;}
+   if(!(recovery?AuthInputValidation.recovery(code):AuthInputValidation.totp(code)).valid()){s.player.sendMessage(msg(s.player,"totp-format"));openManagementVerification(s);return;}
+   String operation=s.management.action()==ManagementRequest.Action.DISABLE?"totp_disable":"totp_recovery_regenerate";
+   requestManagement(s,operation,recovery?"":code,recovery?code:"");
+  }));}catch(LinkageError|RuntimeException error){s.player.sendMessage(msg(s.player,"dialog-required"));}
+ }
+ private void requestManagement(Session s,String operation,String totp,String recovery){
+  String token=s.auth.view().sessionId();
+  gateway.call(dto(s,operation,"","",totp,recovery)).whenComplete((reply,error)->{
+   if(!isEnabled())return;Bukkit.getScheduler().runTask(this,()->{
+    if(!current(s)||s.management==null||!token.equals(s.auth.view().sessionId()))return;
+    if(error!=null||reply==null||!token.equals(reply.session())){s.player.sendMessage(msg(s.player,"UNAVAILABLE"));return;}
+    handleManagementReply(s,reply);
+   });
+  });
+ }
+ private void handleManagementReply(Session s,AuthReply reply){
+  AuthMessages localized=messages.forLocale(s.player.getLocale());
+  switch(reply.status()){
+   case "TOTP_SETUP" -> {
+    try{
+     boolean pack=!settings.getString("resource-pack-provider","NONE").equals("NONE")
+      && (settings.getString("captcha.resource-pack-loading","MANUAL").equalsIgnoreCase("MANUAL")||Boolean.TRUE.equals(s.packLoaded));
+     TotpPresentation view=TotpPresentation.setup(reply.totpUri(),reply.totpSecret(),pack,
+      new QrOptions(settings.getInt("dialogs.totp-setup.qr-quiet-zone",4),settings.getInt("dialogs.totp-setup.qr-max-modules",177)));
+     AuthDialogs.totpSetup(s.player,localized,settings,view,code->Bukkit.getScheduler().runTask(this,()->{
+      if(!AuthInputValidation.totp(code).valid()){s.player.sendMessage(msg(s.player,"totp-format"));handleManagementReply(s,reply);return;}
+      requestManagement(s,"totp_setup_confirm",code,"");
+     }));
+    }catch(RuntimeException|LinkageError failure){getLogger().warning("Could not show TOTP setup dialog for "+s.player.getName()+": "+failure.getClass().getSimpleName());s.player.sendMessage(msg(s.player,"UNAVAILABLE"));}
+   }
+   case "TOTP_RECOVERY" -> AuthDialogs.recovery(s.player,localized,settings,
+    TotpPresentation.recovery(reply.recoveryCodes()),()->completeManagement(s));
+   case "TOTP_STATUS" -> AuthDialogs.managementResult(s.player,localized,settings,
+    reply.totpEnabled()?"dialogs.management-result.enabled":"dialogs.management-result.disabled",()->completeManagement(s));
+   case "TOTP_DISABLED","TOTP_NOT_ENABLED","TOTP_ALREADY_ENABLED" -> AuthDialogs.managementResult(s.player,localized,settings,
+    "messages."+reply.status(),()->completeManagement(s));
+   case "TOTP_INVALID","RECOVERY_INVALID" -> {s.player.sendMessage(msg(s.player,reply.status()));
+    if(s.management.action()==ManagementRequest.Action.ENABLE)requestManagement(s,"totp_setup_begin","","");else openManagementVerification(s);}
+   default -> s.player.sendMessage(msg(s.player,"UNAVAILABLE"));
+  }
+ }
+ private void completeManagement(Session s){
+  if(!current(s)||s.management==null)return;
+  UUID token=UUID.fromString(s.auth.view().sessionId());
+  s.player.sendPluginMessage(this,MANAGEMENT_CHANNEL,java.nio.ByteBuffer.allocate(16)
+   .putLong(token.getMostSignificantBits()).putLong(token.getLeastSignificantBits()).array());
+  s.management=null;
  }
  private void showCaptcha(Session s){
   if(!current(s)||s.auth.view().stage()!=AuthStage.WAITING_FOR_CAPTCHA)return;

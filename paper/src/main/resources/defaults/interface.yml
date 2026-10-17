@@ -101,6 +101,29 @@ dialogs:
     button:
       width: 180
       placement: "CONTENT"
+  totp-setup:
+    body-width: 420
+    # Шрифт с 256 плитками 2×4 для QR; поставляется через ItemsAdder/Oraxen.
+    qr-font: "selene:qr"
+    qr-quiet-zone: 4
+    qr-max-modules: 177
+    code:
+      width: 220
+      label-visible: true
+      max-length: 6
+    button:
+      width: 180
+      placement: "CONTENT"
+  recovery:
+    body-width: 420
+    button:
+      width: 180
+      placement: "FOOTER"
+  management-result:
+    body-width: 360
+    button:
+      width: 180
+      placement: "FOOTER"
 # --- Интерфейс авторизации --------------------------------------------------
 # Каждый канал включается отдельно. Во всех текстах работает MiniMessage и
 # плейсхолдер <seconds>. Состояния: connecting, captcha, login, register, processing.
