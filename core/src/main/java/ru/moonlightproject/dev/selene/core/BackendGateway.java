@@ -16,6 +16,7 @@ public final class BackendGateway implements AuthGateway, AccountAdminGateway {
   private final Semaphore permits;
   private final Semaphore adminPermits;
   private final Duration timeout;
+  private volatile CallScope scope = CallScope.DIRECT;
   public BackendGateway(MoonLightChannel client, Duration timeout, int concurrency) {
     if (concurrency < 1 || timeout.isZero() || timeout.isNegative())
       throw new IllegalArgumentException("Invalid backend bounds");
@@ -49,7 +50,14 @@ public final class BackendGateway implements AuthGateway, AccountAdminGateway {
     MoonLightChannel initial = connector.open();
     return new BackendGateway(new SupervisedChannel(initial, connector), timeout, 128);
   }
+  /** Installs a wrapper such as a tracing span around every later call. */
+  public void scope(CallScope scope) {
+    this.scope = scope == null ? CallScope.DIRECT : scope;
+  }
   public CompletableFuture<AuthReply> call(AuthRequest r) {
+    return scope.around("Auth", r.op(), r.username(), () -> request(r), AuthReply::status);
+  }
+  private CompletableFuture<AuthReply> request(AuthRequest r) {
     if (!permits.tryAcquire())
       return CompletableFuture.failedFuture(new RejectedExecutionException("Backend busy"));
     try {
@@ -62,6 +70,9 @@ public final class BackendGateway implements AuthGateway, AccountAdminGateway {
     }
   }
   public CompletableFuture<AdminReply> admin(AdminRequest request){
+    return scope.around("Admin",request.op(),request.username(),()->adminRequest(request),AdminReply::status);
+  }
+  private CompletableFuture<AdminReply> adminRequest(AdminRequest request){
     if(!adminPermits.tryAcquire())return CompletableFuture.failedFuture(new RejectedExecutionException("Backend admin busy"));
     try{return client.request(ADMIN_METHOD_ID,JsonCodec.encode(request),timeout).whenComplete((reply,error)->adminPermits.release()).thenApply(JsonCodec::adminReply);}
     catch(RuntimeException error){adminPermits.release();return CompletableFuture.failedFuture(error);}

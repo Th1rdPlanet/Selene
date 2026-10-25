@@ -60,6 +60,9 @@ record VelocityConfig(
     int perIpLimit,
     Duration perIpWindow,
     Map<AttackLevel, AttackProfile> attackProfiles,
+    boolean otelEnabled,
+    String otlpEndpoint,
+    String otelServiceName,
     Map<String, String> messages
 ) {
     private static final Set<String> KEYS = Set.of(
@@ -83,7 +86,8 @@ record VelocityConfig(
         "premium-lookup-cache-capacity", "premium-lookup-cache-seconds",
         "premium-lookup-concurrency", "premium-trust-enabled", "premium-trust-ttl-days",
         "premium-trust-capacity", "premium-trust-snapshot-max-age-seconds",
-        "two-factor-management-timeout-seconds", "two-factor-command-aliases");
+        "two-factor-management-timeout-seconds", "two-factor-command-aliases",
+        "telemetry-otel-enabled", "telemetry-otlp-endpoint", "telemetry-service-name");
 
     static VelocityConfig load(Path file) throws IOException {
         Properties properties = new Properties();
@@ -156,7 +160,21 @@ record VelocityConfig(
             positive(properties, "per-ip-limit"),
             Duration.ofSeconds(positive(properties, "per-ip-window-seconds")),
             profiles(properties),
+            bool(properties, "telemetry-otel-enabled", false),
+            otlpEndpoint(properties.getProperty("telemetry-otlp-endpoint", "http://127.0.0.1:4318/v1/traces").trim()),
+            nonBlank(properties.getProperty("telemetry-service-name", "selene-velocity"), "telemetry-service-name"),
             messages);
+    }
+
+    private static String otlpEndpoint(String value) {
+        if (!value.startsWith("http://") && !value.startsWith("https://"))
+            throw new IllegalArgumentException("telemetry-otlp-endpoint must be an http:// or https:// OTLP traces URL");
+        return value;
+    }
+
+    private static String nonBlank(String value, String key) {
+        if (value.isBlank()) throw new IllegalArgumentException("Setting must not be empty: " + key);
+        return value.trim();
     }
 
     String message(String key) {

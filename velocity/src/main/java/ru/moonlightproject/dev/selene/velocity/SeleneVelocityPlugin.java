@@ -71,6 +71,7 @@ public final class SeleneVelocityPlugin {
     private final Map<String, String> lastServers = new ConcurrentHashMap<>();
     private volatile Set<String> premiumNames = Set.of();
     private volatile RuntimeState runtime;
+    private volatile VelocityTracing tracing;
     private final java.util.concurrent.atomic.AtomicReference<Boolean> backendAvailable=new java.util.concurrent.atomic.AtomicReference<>();
 
     @Inject
@@ -99,6 +100,13 @@ public final class SeleneVelocityPlugin {
                     config.trustStore(), config.trustStorePasswordEnv());
                 BackendGateway backend = BackendGateway.connect(
                     config.backendEndpoint(), tls, config.allowLoopbackPlaintext(), Duration.ofSeconds(3));
+                if (config.otelEnabled()) {
+                    tracing = VelocityTracing.start(config.otlpEndpoint(), config.otelServiceName());
+                    backend.scope(tracing);
+                    logger.info(messages.plain("console-otel-enabled",
+                        VelocityMessages.literal("endpoint", config.otlpEndpoint()),
+                        VelocityMessages.literal("service", config.otelServiceName())));
+                }
                 AdmissionPolicy admission = new AdmissionPolicy(
                     config.sessionCapacity(), config.perIpLimit(), config.perIpWindow());
                 AutoAttackController attacks = new AutoAttackController(
@@ -348,6 +356,9 @@ public final class SeleneVelocityPlugin {
             state.relay().close();
             state.backend().close();
         }
+        VelocityTracing spans = tracing;
+        tracing = null;
+        if (spans != null) spans.close();
     }
 
     private CompletableFuture<AuthReply> relay(AuthRequest untrusted, String fingerprint) {

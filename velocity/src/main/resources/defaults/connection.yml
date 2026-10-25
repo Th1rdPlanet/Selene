@@ -25,3 +25,10 @@ relay-bind: "127.0.0.1:38291"
 # SHA-256 сертификата Paper auth-сервера: 64 строчные hex-цифры без двоеточий.
 # Пример получения: openssl x509 -in paper-cert.pem -noout -fingerprint -sha256
 auth-server-certificate-sha256: "replace-with-64-character-lowercase-sha256"
+# --- OpenTelemetry (Grafana Tempo) ------------------------------------------
+# Трейс каждого обращения к backend: Velocity → MoonLightBridge → Rust. По умолчанию выключено.
+telemetry-otel-enabled: false
+# OTLP/HTTP traces endpoint коллектора, Tempo или Grafana Alloy.
+telemetry-otlp-endpoint: "http://127.0.0.1:4318/v1/traces"
+# service.name в Tempo; должен отличаться от имени Rust backend.
+telemetry-service-name: "selene-velocity"

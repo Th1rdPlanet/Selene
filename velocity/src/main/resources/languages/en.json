@@ -26,6 +26,7 @@
   "protection-help": "<gray>Commands: <white>selene attack status</white> and <white>selene attack confirm</white>.</gray>",
   "console-ready": "Ready • auth: <auth> • gameplay server: <target> • protection: <current>",
   "console-starting": "Starting authentication…",
+  "console-otel-enabled": "OpenTelemetry enabled • traces → <endpoint> • service.name=<service>",
   "console-backend-ready": "Backend available • trusted account snapshot refreshed.",
   "console-backend-offline": "Backend unavailable • new logins may be rejected. Check the Rust process and connection.yml.",
   "two-factor-player-only": "<red>This command is available to players only.</red>",
