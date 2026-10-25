@@ -18,6 +18,6 @@ subprojects {
         "testRuntimeOnly"("org.junit.platform:junit-platform-launcher")
     }
     tasks.withType<Jar>().configureEach {
-        manifest.attributes("Implementation-Vendor" to "~VicTim~", "Implementation-URL" to "https://dev.moonlightproject.ru", "MoonLightBridge-Revision" to "20f746fbc9782e356b98494122a8c9b1cafa1d5a")
+        manifest.attributes("Implementation-Vendor" to "~VicTim~", "Implementation-URL" to "https://dev.moonlightproject.ru", "MoonLightBridge-Revision" to "44eff0f9de2a8e5ceb3663d3935b7b9e327b143b")
     }
 }

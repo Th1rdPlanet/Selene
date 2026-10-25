@@ -12,7 +12,7 @@ Author: **~VicTim~**. Java namespace: `ru.moonlightproject.dev.selene`. Project 
 cargo test --manifest-path backend/Cargo.toml
 ```
 
-Artifacts are `paper/build/libs/paper-0.1.0-dev.jar`, `velocity/build/libs/velocity-0.1.0-dev.jar`, and the Rust binary under `backend/target` when built with Cargo. The build embeds the pinned experimental MoonLightBridge revision `20f746fbc9782e356b98494122a8c9b1cafa1d5a`; it does not silently follow `main`.
+Artifacts are `paper/build/libs/paper-0.1.0-dev.jar`, `velocity/build/libs/velocity-0.1.0-dev.jar`, and the Rust binary under `backend/target` when built with Cargo. The build embeds the pinned MoonLightBridge v0.5.2 revision `44eff0f9de2a8e5ceb3663d3935b7b9e327b143b`; it does not silently follow `main`.
 
 ## Deployment layouts
 

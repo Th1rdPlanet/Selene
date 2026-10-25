@@ -2,7 +2,7 @@
 set -euo pipefail
 
 repository='https://github.com/MoonL1ghtProject/MoonLightBridge.git'
-revision='20f746fbc9782e356b98494122a8c9b1cafa1d5a'
+revision='44eff0f9de2a8e5ceb3663d3935b7b9e327b143b'
 destination='.deps/moonlightbridge'
 
 if [[ -d "$destination/.git" ]]; then
