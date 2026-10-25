@@ -29,3 +29,7 @@ CAPTCHA is a fixed 128×128 distorted digit-only PNG; no visual knobs or plainte
 cargo test --manifest-path backend/Cargo.toml
 cargo fmt --manifest-path backend/Cargo.toml -- --check
 ```
+
+`[telemetry] otel = true` exports an OpenTelemetry span for every RPC through OTLP/HTTP to `otlp_endpoint` (Tempo, Grafana Alloy or an OpenTelemetry Collector, default `http://127.0.0.1:4318/v1/traces`) with `service.name` from `service_name`. It is off by default; while off, no exporter is created. Spans carry the method id, request id, sizes, status and handler timing, never request or response bodies. The exporter is bounded and flushed when the backend stops.
+
+`[telemetry] prometheus = true` serves `/metrics` on `prometheus_listen` (default `127.0.0.1:9464`). Besides the MoonLightBridge transport series (`moonlight_bridge_*`) it exports `selene_auth_requests_total{op,status}`, `selene_auth_request_duration_seconds{op}`, `selene_admin_requests_total{op,status}`, `selene_sessions{state}` and `selene_build_info`. Labels come from closed lists; unknown operations and statuses collapse into `other`. The ready-made Grafana, Prometheus and Tempo stack with the Selene dashboard lives in [`../observability`](../observability/README.md).

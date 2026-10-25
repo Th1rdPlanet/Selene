@@ -205,6 +205,15 @@ impl Service {
             totp,
         })
     }
+    /// Pending and authenticated session counts for metrics; None while the table is busy.
+    pub fn session_counts(&self) -> Option<(usize, usize)> {
+        let sessions = self.sessions.try_lock().ok()?;
+        let authenticated = sessions
+            .values()
+            .filter(|s| s.authenticated.is_some())
+            .count();
+        Some((sessions.len() - authenticated, authenticated))
+    }
     pub async fn handle(&self, mut r: Request) -> Reply {
         let id = r.session.clone();
         if r.op == "snapshot" {
@@ -300,7 +309,10 @@ impl Service {
                     expires: time + Duration::from_secs(self.policy.pending_seconds),
                     challenge_expires: time + Duration::from_secs(self.policy.captcha_seconds),
                     challenge: if r.captcha_required && !interactive {
-                        Some(captcha::generate())
+                        Some(crate::traces::span_sync(
+                            "captcha.generate",
+                            captcha::generate,
+                        ))
                     } else {
                         None
                     },
@@ -516,25 +528,33 @@ impl Service {
         let hash = account.map(|a| a.hash);
         let registering = r.op == "register";
         let password = r.password;
-        let result = tokio::task::spawn_blocking(move || {
-            let _permit = permit;
-            let argon = Argon2::default();
-            if registering {
-                argon
-                    .hash_password(password.as_bytes(), &SaltString::generate(&mut OsRng))
-                    .map(|h| Some(h.to_string()))
-                    .map_err(|_| ())
-            } else {
-                let valid = hash
-                    .and_then(|h| {
-                        PasswordHash::new(&h).ok().map(|parsed| {
-                            argon.verify_password(password.as_bytes(), &parsed).is_ok()
+        let stage = if registering {
+            "argon2.hash"
+        } else {
+            "argon2.verify"
+        };
+        let result = crate::traces::span(
+            stage,
+            tokio::task::spawn_blocking(move || {
+                let _permit = permit;
+                let argon = Argon2::default();
+                if registering {
+                    argon
+                        .hash_password(password.as_bytes(), &SaltString::generate(&mut OsRng))
+                        .map(|h| Some(h.to_string()))
+                        .map_err(|_| ())
+                } else {
+                    let valid = hash
+                        .and_then(|h| {
+                            PasswordHash::new(&h).ok().map(|parsed| {
+                                argon.verify_password(password.as_bytes(), &parsed).is_ok()
+                            })
                         })
-                    })
-                    .unwrap_or(false);
-                if valid { Ok(None) } else { Err(()) }
-            }
-        })
+                        .unwrap_or(false);
+                    if valid { Ok(None) } else { Err(()) }
+                }
+            }),
+        )
         .await;
         if Instant::now() >= s.expires {
             return Reply::status("EXPIRED", &id);

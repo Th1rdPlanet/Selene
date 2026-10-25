@@ -1,12 +1,20 @@
 use anyhow::Context;
-use moonlight_bridge_server::{Router, Server, ServerLimits};
+use moonlight_bridge_observability::{otlp, prometheus::PrometheusSnapshotExporter};
+use moonlight_bridge_server::{
+    MoonLightMetrics, Router, Server, ServerLimits, Telemetry, TelemetryChain,
+};
+use opentelemetry::{KeyValue, trace::TracerProvider as _};
+use opentelemetry_sdk::trace::SdkTracerProvider;
 use selene_backend::{
     AdminReply, AdminRequest, Reply, Request,
     admin::AdminService,
+    metrics::{self, Metrics},
     service::{Policy, Service, TotpKey, TotpPolicy},
+    traces,
 };
 use serde::Deserialize;
 use std::{net::SocketAddr, sync::Arc, time::Duration};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Config {
@@ -23,6 +31,8 @@ struct Config {
     policy: Policy,
     #[serde(default)]
     totp: TotpConfig,
+    #[serde(default)]
+    telemetry: TelemetryConfig,
     #[serde(default = "default_admin_concurrency")]
     admin_concurrency: usize,
     #[serde(default = "default_admin_page_size")]
@@ -69,6 +79,46 @@ impl TotpConfig {
                 self.master_key_env
             )
         })
+    }
+}
+/// Optional OpenTelemetry traces for Grafana Tempo and a Prometheus endpoint; both are off by default.
+#[derive(Deserialize)]
+#[serde(default, deny_unknown_fields)]
+struct TelemetryConfig {
+    otel: bool,
+    otlp_endpoint: String,
+    service_name: String,
+    prometheus: bool,
+    prometheus_listen: String,
+}
+impl Default for TelemetryConfig {
+    fn default() -> Self {
+        Self {
+            otel: false,
+            otlp_endpoint: "http://127.0.0.1:4318/v1/traces".into(),
+            service_name: "selene-backend".into(),
+            prometheus: false,
+            prometheus_listen: "127.0.0.1:9464".into(),
+        }
+    }
+}
+impl TelemetryConfig {
+    /// Builds the caller-owned OTLP/HTTP exporter; the provider must be shut down to flush spans.
+    fn provider(&self) -> anyhow::Result<Option<SdkTracerProvider>> {
+        if !self.otel {
+            return Ok(None);
+        }
+        anyhow::ensure!(
+            self.otlp_endpoint.starts_with("http://") || self.otlp_endpoint.starts_with("https://"),
+            "telemetry.otlp_endpoint must be an http:// or https:// OTLP traces URL"
+        );
+        anyhow::ensure!(
+            !self.service_name.trim().is_empty(),
+            "telemetry.service_name must not be empty"
+        );
+        otlp::tracer_provider_with_service(self.otlp_endpoint.clone(), self.service_name.clone())
+            .map(Some)
+            .with_context(|| format!("cannot create OTLP exporter for {}", self.otlp_endpoint))
     }
 }
 #[derive(Deserialize)]
@@ -209,21 +259,96 @@ async fn run() -> anyhow::Result<()> {
     ));
     let requests = Arc::new(tokio::sync::Semaphore::new(32));
     let admin_requests = Arc::new(tokio::sync::Semaphore::new(config.admin_concurrency));
-    let router = Router::builder()
+    let tracing = config.telemetry.provider()?;
+    let mut telemetry: Vec<Arc<dyn Telemetry>> = Vec::new();
+    let mut metrics = None;
+    if config.telemetry.prometheus {
+        let address: SocketAddr =
+            config
+                .telemetry
+                .prometheus_listen
+                .parse()
+                .with_context(|| {
+                    format!(
+                        "invalid telemetry.prometheus_listen '{}' (expected numeric IP:port)",
+                        config.telemetry.prometheus_listen
+                    )
+                })?;
+        let transport = MoonLightMetrics::default();
+        let exporter = Arc::new(PrometheusSnapshotExporter::new()?);
+        let selene = Arc::new(Metrics::register(exporter.registry())?);
+        let listener = tokio::net::TcpListener::bind(address)
+            .await
+            .with_context(|| format!("cannot bind Prometheus listener on {address}"))?;
+        telemetry.push(Arc::new(transport.clone()));
+        tokio::spawn(serve_metrics(
+            listener,
+            transport,
+            exporter,
+            selene.clone(),
+            service.clone(),
+        ));
+        metrics = Some(selene);
+        config.console.info(
+            &format!("Prometheus-метрики • http://{address}/metrics"),
+            &format!("Prometheus metrics • http://{address}/metrics"),
+        );
+    }
+    let mut scope = None;
+    if let Some(provider) = &tracing {
+        let (requests, layer) = traces::install(provider.tracer("selene-backend"));
+        telemetry.push(requests);
+        scope = Some(layer);
+        config.console.info(
+            &format!(
+                "OpenTelemetry включён • трейсы → {} • service.name={}",
+                config.telemetry.otlp_endpoint, config.telemetry.service_name
+            ),
+            &format!(
+                "OpenTelemetry enabled • traces → {} • service.name={}",
+                config.telemetry.otlp_endpoint, config.telemetry.service_name
+            ),
+        );
+    }
+    let mut router = Router::builder();
+    if !telemetry.is_empty() {
+        router = router.telemetry(Arc::new(TelemetryChain::new(telemetry)));
+    }
+    if let Some(layer) = scope {
+        router = router.layer(layer);
+    }
+    let admin_metrics = metrics.clone();
+    let router = router
         .route(1397046273, move |body| {
             let service = service.clone();
             let requests = requests.clone();
+            let metrics = metrics.clone();
             async move {
+                let started = std::time::Instant::now();
+                let mut op = String::from("unparsed");
                 let reply = if body.len() > 262144 {
                     Reply::status("INVALID_REQUEST", "")
                 } else if let Ok(_permit) = requests.try_acquire_owned() {
                     match serde_json::from_slice::<Request>(&body) {
-                        Ok(request) => service.handle(request).await,
+                        Ok(request) => {
+                            op.clone_from(&request.op);
+                            service.handle(request).await
+                        }
                         Err(_) => Reply::status("INVALID_REQUEST", ""),
                     }
                 } else {
                     Reply::status("BUSY", "")
                 };
+                if let Some(metrics) = &metrics {
+                    metrics.auth(&op, &reply.status, started.elapsed());
+                }
+                traces::annotate(
+                    format!("Auth/{}", metrics::operation(&op)),
+                    vec![KeyValue::new(
+                        "selene.status",
+                        metrics::status(&reply.status),
+                    )],
+                );
                 let encoded = serde_json::to_vec(&reply).expect("serializable reply");
                 Ok(if encoded.len() <= 262144 {
                     encoded
@@ -235,7 +360,9 @@ async fn run() -> anyhow::Result<()> {
         .route(1397046274, move |body| {
             let admin = admin.clone();
             let requests = admin_requests.clone();
+            let metrics = admin_metrics.clone();
             async move {
+                let mut op = String::from("unparsed");
                 let reply = if body.len() > 65536 {
                     AdminReply {
                         status: "INVALID_REQUEST".into(),
@@ -243,7 +370,10 @@ async fn run() -> anyhow::Result<()> {
                     }
                 } else if let Ok(_permit) = requests.try_acquire_owned() {
                     match serde_json::from_slice::<AdminRequest>(&body) {
-                        Ok(request) => admin.handle(request).await,
+                        Ok(request) => {
+                            op.clone_from(&request.op);
+                            admin.handle(request).await
+                        }
                         Err(_) => AdminReply {
                             status: "INVALID_REQUEST".into(),
                             ..Default::default()
@@ -255,6 +385,16 @@ async fn run() -> anyhow::Result<()> {
                         ..Default::default()
                     }
                 };
+                if let Some(metrics) = &metrics {
+                    metrics.admin(&op, &reply.status);
+                }
+                traces::annotate(
+                    format!("Admin/{}", metrics::admin_operation(&op)),
+                    vec![KeyValue::new(
+                        "selene.status",
+                        metrics::status(&reply.status),
+                    )],
+                );
                 Ok(serde_json::to_vec(&reply).expect("serializable admin reply"))
             }
         })
@@ -308,7 +448,7 @@ async fn run() -> anyhow::Result<()> {
             }
         ),
     );
-    server
+    let stopped = server
         .with_hello_timeout(Duration::from_secs(5))
         .with_limits(ServerLimits {
             max_connections: 64,
@@ -317,9 +457,48 @@ async fn run() -> anyhow::Result<()> {
             ..ServerLimits::default()
         })
         .run()
-        .await
-        .context("MoonLightBridge backend listener stopped with an error")?;
+        .await;
+    if let Some(provider) = tracing {
+        // Flushes the spans still queued in the batch exporter.
+        let _ = provider.shutdown();
+    }
+    stopped.context("MoonLightBridge backend listener stopped with an error")?;
     Ok(())
+}
+
+/// Minimal `/metrics` responder: one short request per connection, no keep-alive.
+async fn serve_metrics(
+    listener: tokio::net::TcpListener,
+    transport: MoonLightMetrics,
+    exporter: Arc<PrometheusSnapshotExporter>,
+    selene: Arc<Metrics>,
+    service: Arc<Service>,
+) {
+    loop {
+        let Ok((mut stream, _)) = listener.accept().await else {
+            continue;
+        };
+        let (transport, exporter, selene, service) = (
+            transport.clone(),
+            exporter.clone(),
+            selene.clone(),
+            service.clone(),
+        );
+        tokio::spawn(async move {
+            let mut request = [0u8; 1024];
+            let _ = tokio::time::timeout(Duration::from_secs(5), stream.read(&mut request)).await;
+            if let Some((pending, authenticated)) = service.session_counts() {
+                selene.sessions(pending, authenticated);
+            }
+            exporter.try_update(transport.snapshot());
+            let body = exporter.render().unwrap_or_default();
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/plain; version=0.0.4\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            let _ = stream.write_all(response.as_bytes()).await;
+        });
+    }
 }
 
 #[cfg(test)]
@@ -333,6 +512,20 @@ mod console_tests {
         assert!(console.validate().is_ok());
         let invalid: Console = toml::from_str("language='xx'").unwrap();
         assert!(invalid.validate().is_err());
+    }
+    #[test]
+    fn telemetry_is_off_by_default_and_validates_when_enabled() {
+        let telemetry: TelemetryConfig = toml::from_str("").unwrap();
+        assert!(!telemetry.otel);
+        assert!(telemetry.provider().unwrap().is_none());
+        let endpoint: TelemetryConfig =
+            toml::from_str("otel=true\notlp_endpoint='127.0.0.1:4318'").unwrap();
+        assert!(endpoint.provider().is_err());
+        let name: TelemetryConfig = toml::from_str("otel=true\nservice_name=' '").unwrap();
+        assert!(name.provider().is_err());
+        assert!(toml::from_str::<TelemetryConfig>("otle=true").is_err());
+        assert!(!telemetry.prometheus);
+        assert_eq!(telemetry.prometheus_listen, "127.0.0.1:9464");
     }
     #[test]
     fn enabled_totp_requires_a_valid_master_key_environment_value() {

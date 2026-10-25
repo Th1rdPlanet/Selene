@@ -5,7 +5,11 @@ edition = "2024"
 authors = ["~VicTim~"]
 
 [dependencies]
-moonlight-bridge-server = { path = "../.deps/moonlightbridge/crates/moonlight-bridge-server" }
+moonlight-bridge-server = "0.5.2"
+moonlight-bridge-observability = { version = "0.5.2", features = ["otlp", "prometheus"] }
+prometheus = { version = "0.14", default-features = false }
+opentelemetry = { version = "0.33", default-features = false, features = ["trace"] }
+opentelemetry_sdk = { version = "0.33", default-features = false, features = ["trace"] }
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

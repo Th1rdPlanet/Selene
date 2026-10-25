@@ -55,82 +55,71 @@ impl Storage {
             .collect()
     }
     pub async fn account(&self, name: &str) -> anyhow::Result<Option<Account>> {
-        let row = sqlx::query(
-            &self.sql("SELECT password_hash, premium FROM selene_accounts WHERE name = ?"),
-        )
-        .bind(name.to_ascii_lowercase())
-        .fetch_optional(&self.pool)
-        .await?;
-        Ok(row.map(|r| Account {
-            hash: r.get("password_hash"),
-            premium: r.get::<i32, _>("premium") != 0,
-        }))
+        crate::traces::span("db.account", async move {
+            let row = sqlx::query(
+                &self.sql("SELECT password_hash, premium FROM selene_accounts WHERE name = ?"),
+            )
+            .bind(name.to_ascii_lowercase())
+            .fetch_optional(&self.pool)
+            .await?;
+            Ok(row.map(|r| Account {
+                hash: r.get("password_hash"),
+                premium: r.get::<i32, _>("premium") != 0,
+            }))
+        })
+        .await
     }
     pub async fn register(&self, name: &str, hash: &str, premium: bool) -> anyhow::Result<bool> {
-        let result=sqlx::query(&self.sql("INSERT INTO selene_accounts (name,password_hash,premium,trusted_ip,trusted_until) VALUES (?,?,?,'',0)")).bind(name.to_ascii_lowercase()).bind(hash).bind(if premium{1i32}else{0}).execute(&self.pool).await;
-        match result {
-            Ok(_) => Ok(true),
-            Err(sqlx::Error::Database(e)) if e.is_unique_violation() => Ok(false),
-            Err(e) => Err(e.into()),
-        }
+        crate::traces::span("db.register", async move {
+            let result=sqlx::query(&self.sql("INSERT INTO selene_accounts (name,password_hash,premium,trusted_ip,trusted_until) VALUES (?,?,?,'',0)")).bind(name.to_ascii_lowercase()).bind(hash).bind(if premium{1i32}else{0}).execute(&self.pool).await;
+            match result {
+                Ok(_) => Ok(true),
+                Err(sqlx::Error::Database(e)) if e.is_unique_violation() => Ok(false),
+                Err(e) => Err(e.into()),
+            }
+        })
+        .await
     }
     pub async fn trust(&self, name: &str, ip: &str, until: i64) -> anyhow::Result<()> {
-        sqlx::query(
-            &self
-                .sql("UPDATE selene_accounts SET trusted_ip = ?, trusted_until = ? WHERE name = ?"),
-        )
-        .bind(ip)
-        .bind(until)
-        .bind(name)
-        .execute(&self.pool)
-        .await?;
-        Ok(())
+        crate::traces::span("db.trust", async move {
+            sqlx::query(&self.sql(
+                "UPDATE selene_accounts SET trusted_ip = ?, trusted_until = ? WHERE name = ?",
+            ))
+            .bind(ip)
+            .bind(until)
+            .bind(name)
+            .execute(&self.pool)
+            .await?;
+            Ok(())
+        })
+        .await
     }
     pub async fn snapshot(
         &self,
         now: i64,
     ) -> anyhow::Result<(BTreeMap<String, String>, Vec<String>)> {
-        let rows=sqlx::query(&self.sql("SELECT name, premium, trusted_ip, trusted_until FROM selene_accounts WHERE premium = 1 OR trusted_until > ? LIMIT 4097")).bind(now).fetch_all(&self.pool).await?;
-        anyhow::ensure!(rows.len() <= 4096, "snapshot capacity exceeded");
-        let mut green = BTreeMap::new();
-        let mut premium = Vec::new();
-        for r in rows {
-            let name: String = r.get("name");
-            if r.get::<i32, _>("premium") != 0 {
-                premium.push(name.clone());
+        crate::traces::span("db.snapshot", async move {
+            let rows=sqlx::query(&self.sql("SELECT name, premium, trusted_ip, trusted_until FROM selene_accounts WHERE premium = 1 OR trusted_until > ? LIMIT 4097")).bind(now).fetch_all(&self.pool).await?;
+            anyhow::ensure!(rows.len() <= 4096, "snapshot capacity exceeded");
+            let mut green = BTreeMap::new();
+            let mut premium = Vec::new();
+            for r in rows {
+                let name: String = r.get("name");
+                if r.get::<i32, _>("premium") != 0 {
+                    premium.push(name.clone());
+                }
+                if r.get::<i64, _>("trusted_until") > now {
+                    green.insert(name, r.get("trusted_ip"));
+                }
             }
-            if r.get::<i64, _>("trusted_until") > now {
-                green.insert(name, r.get("trusted_ip"));
-            }
-        }
-        Ok((green, premium))
+            Ok((green, premium))
+        })
+        .await
     }
     pub async fn admin_account(&self, name: &str) -> anyhow::Result<Option<crate::AdminAccount>> {
-        let row=sqlx::query(&self.sql("SELECT name,password_hash,premium,trusted_ip,trusted_until,CASE WHEN EXISTS (SELECT 1 FROM selene_totp WHERE selene_totp.name = selene_accounts.name) THEN 1 ELSE 0 END AS totp_enabled FROM selene_accounts WHERE name = ?")).bind(name.to_ascii_lowercase()).fetch_optional(&self.pool).await?;
-        Ok(row.map(|r| {
-            crate::admin::account(
-                r.get("name"),
-                r.get::<i32, _>("premium") != 0,
-                r.get("trusted_ip"),
-                r.get("trusted_until"),
-                r.get("password_hash"),
-                r.get::<i32, _>("totp_enabled") != 0,
-            )
-        }))
-    }
-    pub async fn admin_list(
-        &self,
-        page: u32,
-        page_size: u32,
-    ) -> anyhow::Result<(Vec<crate::AdminAccount>, bool)> {
-        let limit = page_size.min(50) as i64;
-        let offset = (page.saturating_sub(1) as i64).saturating_mul(limit);
-        let rows=sqlx::query(&self.sql("SELECT name,password_hash,premium,trusted_ip,trusted_until,CASE WHEN EXISTS (SELECT 1 FROM selene_totp WHERE selene_totp.name = selene_accounts.name) THEN 1 ELSE 0 END AS totp_enabled FROM selene_accounts ORDER BY name ASC LIMIT ? OFFSET ?")).bind(limit+1).bind(offset).fetch_all(&self.pool).await?;
-        let has_more = rows.len() > limit as usize;
-        let accounts = rows
-            .into_iter()
-            .take(limit as usize)
-            .map(|r| {
+        crate::traces::span("db.admin_account", async move {
+            let row=sqlx::query(&self.sql("SELECT name,password_hash,premium,trusted_ip,trusted_until,CASE WHEN EXISTS (SELECT 1 FROM selene_totp WHERE selene_totp.name = selene_accounts.name) THEN 1 ELSE 0 END AS totp_enabled FROM selene_accounts WHERE name = ?")).bind(name.to_ascii_lowercase()).fetch_optional(&self.pool).await?;
+            Ok(row.map(|r| {
                 crate::admin::account(
                     r.get("name"),
                     r.get::<i32, _>("premium") != 0,
@@ -139,79 +128,119 @@ impl Storage {
                     r.get("password_hash"),
                     r.get::<i32, _>("totp_enabled") != 0,
                 )
-            })
-            .collect();
-        Ok((accounts, has_more))
+            }))
+        })
+        .await
+    }
+    pub async fn admin_list(
+        &self,
+        page: u32,
+        page_size: u32,
+    ) -> anyhow::Result<(Vec<crate::AdminAccount>, bool)> {
+        crate::traces::span("db.admin_list", async move {
+            let limit = page_size.min(50) as i64;
+            let offset = (page.saturating_sub(1) as i64).saturating_mul(limit);
+            let rows=sqlx::query(&self.sql("SELECT name,password_hash,premium,trusted_ip,trusted_until,CASE WHEN EXISTS (SELECT 1 FROM selene_totp WHERE selene_totp.name = selene_accounts.name) THEN 1 ELSE 0 END AS totp_enabled FROM selene_accounts ORDER BY name ASC LIMIT ? OFFSET ?")).bind(limit+1).bind(offset).fetch_all(&self.pool).await?;
+            let has_more = rows.len() > limit as usize;
+            let accounts = rows
+                .into_iter()
+                .take(limit as usize)
+                .map(|r| {
+                    crate::admin::account(
+                        r.get("name"),
+                        r.get::<i32, _>("premium") != 0,
+                        r.get("trusted_ip"),
+                        r.get("trusted_until"),
+                        r.get("password_hash"),
+                        r.get::<i32, _>("totp_enabled") != 0,
+                    )
+                })
+                .collect();
+            Ok((accounts, has_more))
+        })
+        .await
     }
     pub async fn admin_delete(&self, name: &str) -> anyhow::Result<bool> {
-        let canonical = name.to_ascii_lowercase();
-        let mut tx = self.pool.begin().await?;
-        for table in [
-            "selene_recovery_codes",
-            "selene_totp",
-            "selene_premium_trust",
-        ] {
-            sqlx::query(&self.sql(&format!("DELETE FROM {table} WHERE name = ?")))
+        crate::traces::span("db.admin_delete", async move {
+            let canonical = name.to_ascii_lowercase();
+            let mut tx = self.pool.begin().await?;
+            for table in [
+                "selene_recovery_codes",
+                "selene_totp",
+                "selene_premium_trust",
+            ] {
+                sqlx::query(&self.sql(&format!("DELETE FROM {table} WHERE name = ?")))
+                    .bind(&canonical)
+                    .execute(&mut *tx)
+                    .await?;
+            }
+            let removed = sqlx::query(&self.sql("DELETE FROM selene_accounts WHERE name = ?"))
                 .bind(&canonical)
                 .execute(&mut *tx)
-                .await?;
-        }
-        let removed = sqlx::query(&self.sql("DELETE FROM selene_accounts WHERE name = ?"))
-            .bind(&canonical)
-            .execute(&mut *tx)
-            .await?
-            .rows_affected()
-            > 0;
-        tx.commit().await?;
-        Ok(removed)
-    }
-    pub async fn admin_reset_password(&self, name: &str) -> anyhow::Result<bool> {
-        Ok(
-            sqlx::query(&self.sql("UPDATE selene_accounts SET password_hash = '' WHERE name = ?"))
-                .bind(name.to_ascii_lowercase())
-                .execute(&self.pool)
                 .await?
                 .rows_affected()
-                > 0,
-        )
+                > 0;
+            tx.commit().await?;
+            Ok(removed)
+        })
+        .await
+    }
+    pub async fn admin_reset_password(&self, name: &str) -> anyhow::Result<bool> {
+        crate::traces::span("db.admin_reset_password", async move {
+            Ok(sqlx::query(
+                &self.sql("UPDATE selene_accounts SET password_hash = '' WHERE name = ?"),
+            )
+            .bind(name.to_ascii_lowercase())
+            .execute(&self.pool)
+            .await?
+            .rows_affected()
+                > 0)
+        })
+        .await
     }
     pub async fn register_reset(&self, name: &str, hash: &str) -> anyhow::Result<bool> {
-        Ok(sqlx::query(&self.sql(
-            "UPDATE selene_accounts SET password_hash = ? WHERE name = ? AND password_hash = ''",
-        ))
-        .bind(hash)
-        .bind(name.to_ascii_lowercase())
-        .execute(&self.pool)
-        .await?
-        .rows_affected()
-            == 1)
+        crate::traces::span("db.register_reset", async move {
+            Ok(sqlx::query(&self.sql(
+                "UPDATE selene_accounts SET password_hash = ? WHERE name = ? AND password_hash = ''",
+            ))
+            .bind(hash)
+            .bind(name.to_ascii_lowercase())
+            .execute(&self.pool)
+            .await?
+            .rows_affected()
+                == 1)
+        })
+        .await
     }
 
     pub(crate) async fn totp_state(&self, name: &str) -> anyhow::Result<Option<TotpState>> {
-        let row = sqlx::query(&self.sql(
-            "SELECT encryption_version,nonce,ciphertext,last_step FROM selene_totp WHERE name = ?",
-        ))
-        .bind(name.to_ascii_lowercase())
-        .fetch_optional(&self.pool)
-        .await?;
-        row.map(|row| {
-            let nonce = STANDARD
-                .decode(row.get::<String, _>("nonce"))
-                .context("invalid stored TOTP nonce")?;
-            let ciphertext = STANDARD
-                .decode(row.get::<String, _>("ciphertext"))
-                .context("invalid stored TOTP ciphertext")?;
-            let last: i64 = row.get("last_step");
-            Ok(TotpState {
-                encrypted: EncryptedSecret::from_parts(
-                    row.get::<i32, _>("encryption_version") as u8,
-                    &nonce,
-                    ciphertext,
-                )?,
-                last_step: (last >= 0).then_some(last as u64),
+        crate::traces::span("db.totp_state", async move {
+            let row = sqlx::query(&self.sql(
+                "SELECT encryption_version,nonce,ciphertext,last_step FROM selene_totp WHERE name = ?",
+            ))
+            .bind(name.to_ascii_lowercase())
+            .fetch_optional(&self.pool)
+            .await?;
+            row.map(|row| {
+                let nonce = STANDARD
+                    .decode(row.get::<String, _>("nonce"))
+                    .context("invalid stored TOTP nonce")?;
+                let ciphertext = STANDARD
+                    .decode(row.get::<String, _>("ciphertext"))
+                    .context("invalid stored TOTP ciphertext")?;
+                let last: i64 = row.get("last_step");
+                Ok(TotpState {
+                    encrypted: EncryptedSecret::from_parts(
+                        row.get::<i32, _>("encryption_version") as u8,
+                        &nonce,
+                        ciphertext,
+                    )?,
+                    last_step: (last >= 0).then_some(last as u64),
+                })
             })
+            .transpose()
         })
-        .transpose()
+        .await
     }
 
     pub(crate) async fn enable_totp_at_step(
@@ -222,36 +251,39 @@ impl Storage {
         created_at: i64,
         last_step: Option<u64>,
     ) -> anyhow::Result<()> {
-        anyhow::ensure!(
-            !recovery_hashes.is_empty() && recovery_hashes.len() <= 32 && created_at >= 0,
-            "invalid TOTP persistence input"
-        );
-        let canonical = name.to_ascii_lowercase();
-        let (version, nonce, ciphertext) = encrypted.parts();
-        let mut tx = self.pool.begin().await?;
-        sqlx::query(&self.sql("DELETE FROM selene_recovery_codes WHERE name = ?"))
-            .bind(&canonical)
-            .execute(&mut *tx)
-            .await?;
-        sqlx::query(&self.sql("DELETE FROM selene_totp WHERE name = ?"))
-            .bind(&canonical)
-            .execute(&mut *tx)
-            .await?;
-        let stored_step = last_step.map(i64::try_from).transpose()?.unwrap_or(-1);
-        sqlx::query(&self.sql("INSERT INTO selene_totp (name,encryption_version,nonce,ciphertext,last_step,created_at) VALUES (?,?,?,?,?,?)"))
-            .bind(&canonical).bind(i32::from(version)).bind(STANDARD.encode(nonce)).bind(STANDARD.encode(ciphertext)).bind(stored_step).bind(created_at).execute(&mut *tx).await?;
-        for hash in recovery_hashes {
-            sqlx::query(&self.sql(
-                "INSERT INTO selene_recovery_codes (name,code_hash,created_at) VALUES (?,?,?)",
-            ))
-            .bind(&canonical)
-            .bind(hex(hash))
-            .bind(created_at)
-            .execute(&mut *tx)
-            .await?;
-        }
-        tx.commit().await?;
-        Ok(())
+        crate::traces::span("db.enable_totp_at_step", async move {
+            anyhow::ensure!(
+                !recovery_hashes.is_empty() && recovery_hashes.len() <= 32 && created_at >= 0,
+                "invalid TOTP persistence input"
+            );
+            let canonical = name.to_ascii_lowercase();
+            let (version, nonce, ciphertext) = encrypted.parts();
+            let mut tx = self.pool.begin().await?;
+            sqlx::query(&self.sql("DELETE FROM selene_recovery_codes WHERE name = ?"))
+                .bind(&canonical)
+                .execute(&mut *tx)
+                .await?;
+            sqlx::query(&self.sql("DELETE FROM selene_totp WHERE name = ?"))
+                .bind(&canonical)
+                .execute(&mut *tx)
+                .await?;
+            let stored_step = last_step.map(i64::try_from).transpose()?.unwrap_or(-1);
+            sqlx::query(&self.sql("INSERT INTO selene_totp (name,encryption_version,nonce,ciphertext,last_step,created_at) VALUES (?,?,?,?,?,?)"))
+                .bind(&canonical).bind(i32::from(version)).bind(STANDARD.encode(nonce)).bind(STANDARD.encode(ciphertext)).bind(stored_step).bind(created_at).execute(&mut *tx).await?;
+            for hash in recovery_hashes {
+                sqlx::query(&self.sql(
+                    "INSERT INTO selene_recovery_codes (name,code_hash,created_at) VALUES (?,?,?)",
+                ))
+                .bind(&canonical)
+                .bind(hex(hash))
+                .bind(created_at)
+                .execute(&mut *tx)
+                .await?;
+            }
+            tx.commit().await?;
+            Ok(())
+        })
+        .await
     }
 
     pub(crate) async fn replace_recovery(
@@ -260,36 +292,39 @@ impl Storage {
         recovery_hashes: &[[u8; 32]],
         created_at: i64,
     ) -> anyhow::Result<bool> {
-        anyhow::ensure!(
-            !recovery_hashes.is_empty() && recovery_hashes.len() <= 32 && created_at >= 0,
-            "invalid recovery persistence input"
-        );
-        let canonical = name.to_ascii_lowercase();
-        let mut tx = self.pool.begin().await?;
-        let exists = sqlx::query(&self.sql("SELECT name FROM selene_totp WHERE name = ?"))
-            .bind(&canonical)
-            .fetch_optional(&mut *tx)
-            .await?
-            .is_some();
-        if !exists {
-            return Ok(false);
-        }
-        sqlx::query(&self.sql("DELETE FROM selene_recovery_codes WHERE name = ?"))
-            .bind(&canonical)
-            .execute(&mut *tx)
-            .await?;
-        for hash in recovery_hashes {
-            sqlx::query(&self.sql(
-                "INSERT INTO selene_recovery_codes (name,code_hash,created_at) VALUES (?,?,?)",
-            ))
-            .bind(&canonical)
-            .bind(hex(hash))
-            .bind(created_at)
-            .execute(&mut *tx)
-            .await?;
-        }
-        tx.commit().await?;
-        Ok(true)
+        crate::traces::span("db.replace_recovery", async move {
+            anyhow::ensure!(
+                !recovery_hashes.is_empty() && recovery_hashes.len() <= 32 && created_at >= 0,
+                "invalid recovery persistence input"
+            );
+            let canonical = name.to_ascii_lowercase();
+            let mut tx = self.pool.begin().await?;
+            let exists = sqlx::query(&self.sql("SELECT name FROM selene_totp WHERE name = ?"))
+                .bind(&canonical)
+                .fetch_optional(&mut *tx)
+                .await?
+                .is_some();
+            if !exists {
+                return Ok(false);
+            }
+            sqlx::query(&self.sql("DELETE FROM selene_recovery_codes WHERE name = ?"))
+                .bind(&canonical)
+                .execute(&mut *tx)
+                .await?;
+            for hash in recovery_hashes {
+                sqlx::query(&self.sql(
+                    "INSERT INTO selene_recovery_codes (name,code_hash,created_at) VALUES (?,?,?)",
+                ))
+                .bind(&canonical)
+                .bind(hex(hash))
+                .bind(created_at)
+                .execute(&mut *tx)
+                .await?;
+            }
+            tx.commit().await?;
+            Ok(true)
+        })
+        .await
     }
 
     pub(crate) async fn consume_recovery(
@@ -297,38 +332,47 @@ impl Storage {
         name: &str,
         hash: &[u8; 32],
     ) -> anyhow::Result<bool> {
-        Ok(sqlx::query(
-            &self.sql("DELETE FROM selene_recovery_codes WHERE name = ? AND code_hash = ?"),
-        )
-        .bind(name.to_ascii_lowercase())
-        .bind(hex(hash))
-        .execute(&self.pool)
-        .await?
-        .rows_affected()
-            == 1)
+        crate::traces::span("db.consume_recovery", async move {
+            Ok(sqlx::query(
+                &self.sql("DELETE FROM selene_recovery_codes WHERE name = ? AND code_hash = ?"),
+            )
+            .bind(name.to_ascii_lowercase())
+            .bind(hex(hash))
+            .execute(&self.pool)
+            .await?
+            .rows_affected()
+                == 1)
+        })
+        .await
     }
 
     pub(crate) async fn accept_totp_step(&self, name: &str, step: u64) -> anyhow::Result<bool> {
-        let step = i64::try_from(step).context("TOTP step overflow")?;
-        Ok(sqlx::query(&self.sql("UPDATE selene_totp SET last_step = ? WHERE name = ? AND (last_step < ? OR last_step = -1)"))
-            .bind(step).bind(name.to_ascii_lowercase()).bind(step).execute(&self.pool).await?.rows_affected()==1)
+        crate::traces::span("db.accept_totp_step", async move {
+            let step = i64::try_from(step).context("TOTP step overflow")?;
+            Ok(sqlx::query(&self.sql("UPDATE selene_totp SET last_step = ? WHERE name = ? AND (last_step < ? OR last_step = -1)"))
+                .bind(step).bind(name.to_ascii_lowercase()).bind(step).execute(&self.pool).await?.rows_affected()==1)
+        })
+        .await
     }
 
     pub(crate) async fn disable_totp(&self, name: &str) -> anyhow::Result<bool> {
-        let canonical = name.to_ascii_lowercase();
-        let mut tx = self.pool.begin().await?;
-        sqlx::query(&self.sql("DELETE FROM selene_recovery_codes WHERE name = ?"))
-            .bind(&canonical)
-            .execute(&mut *tx)
-            .await?;
-        let removed = sqlx::query(&self.sql("DELETE FROM selene_totp WHERE name = ?"))
-            .bind(&canonical)
-            .execute(&mut *tx)
-            .await?
-            .rows_affected()
-            == 1;
-        tx.commit().await?;
-        Ok(removed)
+        crate::traces::span("db.disable_totp", async move {
+            let canonical = name.to_ascii_lowercase();
+            let mut tx = self.pool.begin().await?;
+            sqlx::query(&self.sql("DELETE FROM selene_recovery_codes WHERE name = ?"))
+                .bind(&canonical)
+                .execute(&mut *tx)
+                .await?;
+            let removed = sqlx::query(&self.sql("DELETE FROM selene_totp WHERE name = ?"))
+                .bind(&canonical)
+                .execute(&mut *tx)
+                .await?
+                .rows_affected()
+                == 1;
+            tx.commit().await?;
+            Ok(removed)
+        })
+        .await
     }
 
     pub(crate) async fn set_premium_trust(
@@ -337,23 +381,26 @@ impl Storage {
         ip: &str,
         expires_at: i64,
     ) -> anyhow::Result<()> {
-        anyhow::ensure!(expires_at >= 0, "invalid premium trust expiry");
-        let canonical = name.to_ascii_lowercase();
-        let mut tx = self.pool.begin().await?;
-        sqlx::query(&self.sql("DELETE FROM selene_premium_trust WHERE name = ?"))
+        crate::traces::span("db.set_premium_trust", async move {
+            anyhow::ensure!(expires_at >= 0, "invalid premium trust expiry");
+            let canonical = name.to_ascii_lowercase();
+            let mut tx = self.pool.begin().await?;
+            sqlx::query(&self.sql("DELETE FROM selene_premium_trust WHERE name = ?"))
+                .bind(&canonical)
+                .execute(&mut *tx)
+                .await?;
+            sqlx::query(
+                &self.sql("INSERT INTO selene_premium_trust (name,ip,expires_at) VALUES (?,?,?)"),
+            )
             .bind(&canonical)
+            .bind(ip)
+            .bind(expires_at)
             .execute(&mut *tx)
             .await?;
-        sqlx::query(
-            &self.sql("INSERT INTO selene_premium_trust (name,ip,expires_at) VALUES (?,?,?)"),
-        )
-        .bind(&canonical)
-        .bind(ip)
-        .bind(expires_at)
-        .execute(&mut *tx)
-        .await?;
-        tx.commit().await?;
-        Ok(())
+            tx.commit().await?;
+            Ok(())
+        })
+        .await
     }
 
     pub(crate) async fn premium_snapshot(
@@ -361,24 +408,27 @@ impl Storage {
         time: i64,
         limit: usize,
     ) -> anyhow::Result<BTreeMap<String, PremiumTrustRecord>> {
-        let rows=sqlx::query(&self.sql("SELECT name,ip,expires_at FROM selene_premium_trust WHERE expires_at > ? ORDER BY name ASC LIMIT ?"))
-            .bind(time).bind(i64::try_from(limit.saturating_add(1))?).fetch_all(&self.pool).await?;
-        anyhow::ensure!(
-            rows.len() <= limit,
-            "premium trust snapshot capacity exceeded"
-        );
-        Ok(rows
-            .into_iter()
-            .map(|row| {
-                (
-                    row.get("name"),
-                    PremiumTrustRecord {
-                        ip: row.get("ip"),
-                        expires_at: row.get("expires_at"),
-                    },
-                )
-            })
-            .collect())
+        crate::traces::span("db.premium_snapshot", async move {
+            let rows=sqlx::query(&self.sql("SELECT name,ip,expires_at FROM selene_premium_trust WHERE expires_at > ? ORDER BY name ASC LIMIT ?"))
+                .bind(time).bind(i64::try_from(limit.saturating_add(1))?).fetch_all(&self.pool).await?;
+            anyhow::ensure!(
+                rows.len() <= limit,
+                "premium trust snapshot capacity exceeded"
+            );
+            Ok(rows
+                .into_iter()
+                .map(|row| {
+                    (
+                        row.get("name"),
+                        PremiumTrustRecord {
+                            ip: row.get("ip"),
+                            expires_at: row.get("expires_at"),
+                        },
+                    )
+                })
+                .collect())
+        })
+        .await
     }
 }
 

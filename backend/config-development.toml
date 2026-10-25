@@ -28,3 +28,15 @@ trust_qualify_seconds = 10
 trust_ttl_seconds = 60
 password_workers = 2
 tombstone_capacity = 20000
+
+[telemetry]
+# OpenTelemetry-трейсы каждого RPC для Grafana Tempo (OTLP/HTTP). По умолчанию выключено.
+otel = false
+# OTLP traces endpoint коллектора/Tempo/Grafana Alloy.
+otlp_endpoint = "http://127.0.0.1:4318/v1/traces"
+# service.name в Tempo; у каждого процесса должен быть свой.
+service_name = "selene-backend"
+# Prometheus-метрики (вход, CAPTCHA, TOTP, сессии, задержки, транспорт MoonLightBridge) для дашборда Grafana.
+prometheus = false
+# Адрес HTTP /metrics. Держите на loopback или закройте файрволом.
+prometheus_listen = "127.0.0.1:9464"
