@@ -33,7 +33,7 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
  private final AuthFlow flow=new AuthFlow();
  private final SecureChatInput secureInput=new SecureChatInput();
  private org.bukkit.configuration.file.YamlConfiguration settings;
- private InventoryProtection inventoryProtection; private AuthGateway gateway; private AccountAdminGateway adminGateway; private AuthMessages messages; private LimboManager limbo; private PlayerPresentation presentation; private ResourcePackDelivery resourcePackDelivery; private InteractiveCaptchaManager interactiveCaptcha; private int presentationTask=-1; private boolean standalone,captcha,dialogCapable,packetEventsEnabled;
+ private InventoryProtection inventoryProtection; private AuthGateway gateway; private AccountAdminGateway adminGateway; private AuthMessages messages; private LimboManager limbo; private PlayerPresentation presentation; private ResourcePackDelivery resourcePackDelivery; private InteractiveCaptchaManager interactiveCaptcha; private MaintenanceNode maintenanceNode; private int presentationTask=-1,maintenanceTask=-1; private boolean standalone,networkNode,captcha,dialogCapable,packetEventsEnabled;
  private static final class Session {
   final Player player; final Object inventoryConnection; final AuthSession auth; final PresentationSnapshot snapshot;
   MapView map;
@@ -48,7 +48,7 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
    // Bukkit may enable the same plugin instance again after /selene reload. Do not let
    // optional services from the previous configuration survive that lifecycle.
    gateway=null;adminGateway=null;inventoryProtection=null;resourcePackDelivery=null;interactiveCaptcha=null;
-   presentationTask=-1;standalone=false;captcha=false;dialogCapable=false;packetEventsEnabled=false;
+   presentationTask=-1;maintenanceTask=-1;standalone=false;networkNode=false;captcha=false;dialogCapable=false;packetEventsEnabled=false;
    settings=PaperConfiguration.load(getDataFolder().toPath(),this::getResource);
    PaperConfigValidator.validate(settings.getValues(true));
    Map<String,String> builtIn;
@@ -59,9 +59,18 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
    for(String key:List.of("unavailable","timeout","blocked","usage","CAPTCHA","CAPTCHA_INVALID","captcha-pack-fallback","captcha-pack-required","LOGIN","REGISTER","AUTHENTICATED","TOTP_REQUIRED","TOTP_INVALID","RECOVERY_INVALID","totp-format","INVALID_CREDENTIALS","ACCOUNT_EXISTS","RATE_LIMITED","BUSY","password-too-short","password-too-long","password-mismatch","captcha-format","INVALID_REQUEST","EXPIRED","UNAVAILABLE","not-ready","secure-command-only","chat-login-prompt","chat-register-prompt","chat-confirm-prompt","chat-totp-prompt","dialog-required","admin-console-only","admin-use-velocity","admin-help","admin-invalid-username","admin-list-header","admin-list-row","admin-list-more","admin-info","admin-status-ok","admin-status-not-found","admin-status-invalid-request","admin-status-busy","admin-status-unavailable"))messages.component("messages."+key);
    if(settings.getBoolean("console.banner",true))for(String line:StartupBanner.lines(getPluginMeta().getVersion(),"Paper"))getLogger().info(line);
    getLogger().info(messages.plain("console.starting"));
+   String role=settings.getString("role","");if(!Set.of("STANDALONE","PROXY_AUTH","NETWORK_NODE").contains(role))throw new IllegalArgumentException("Invalid role");
+   standalone=role.equals("STANDALONE");networkNode=role.equals("NETWORK_NODE");
+   if(!standalone){
+    maintenanceNode=new MaintenanceNode(settings.getString("node-id",""),this::sendMaintenance,getLogger()::info);
+    getServer().getMessenger().registerIncomingPluginChannel(this,MANAGEMENT_CHANNEL,this);
+    getServer().getMessenger().registerOutgoingPluginChannel(this,MANAGEMENT_CHANNEL);
+    getServer().getPluginManager().registerEvents(this,this);
+    maintenanceTask=Bukkit.getScheduler().scheduleSyncRepeatingTask(this,this::publishWhitelist,1,40);
+   }
+   if(networkNode){getLogger().info("Selene NETWORK_NODE ready • node="+settings.getString("node-id")+" • vanilla whitelist synchronization active");return;}
    limbo=new LimboManager(this,Objects.requireNonNull(settings.getConfigurationSection("limbo"),"Missing configuration section: limbo"));limbo.load();
    presentation=new PlayerPresentation(this,messages,settings);
-   String role=settings.getString("role",""); if(!Set.of("STANDALONE","PROXY_AUTH").contains(role))throw new IllegalArgumentException("Invalid role"); standalone=role.equals("STANDALONE");
    String stage=settings.getString("stage","");if(!Set.of("AFTER_JOIN","BEFORE_JOIN").contains(stage))throw new IllegalArgumentException("stage must be AFTER_JOIN or BEFORE_JOIN");
    if(stage.equals("BEFORE_JOIN")&&standalone)throw new IllegalArgumentException("stage BEFORE_JOIN requires role PROXY_AUTH; standalone Paper has no separate gameplay backend");
    String captchaView=settings.getString("captcha-view","").toUpperCase(Locale.ROOT);if(!Set.of("MAP","DIALOG_FONT","INTERACTIVE").contains(captchaView))throw new IllegalArgumentException("captcha-view must be MAP, DIALOG_FONT or INTERACTIVE");
@@ -87,12 +96,10 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
    else getLogger().info(messages.plain("console.connection",AuthMessages.literal("target","Velocity relay"),AuthMessages.literal("address",required(props,"host")+":"+positiveInt(props,"port"))));
    captcha=standalone&&strictBoolean(props,"captcha-required");
    try{Class.forName("io.papermc.paper.dialog.Dialog");dialogCapable=settings.getBoolean("dialogs.enabled",true);}catch(ClassNotFoundException ignored){}
-   getServer().getPluginManager().registerEvents(this,this);
+   if(standalone)getServer().getPluginManager().registerEvents(this,this);
    if(!standalone){
     getServer().getMessenger().registerIncomingPluginChannel(this,SESSION_CHANNEL,this);
     getServer().getMessenger().registerOutgoingPluginChannel(this,SESSION_CHANNEL);
-    getServer().getMessenger().registerIncomingPluginChannel(this,MANAGEMENT_CHANNEL,this);
-    getServer().getMessenger().registerOutgoingPluginChannel(this,MANAGEMENT_CHANNEL);
    }
    for(String command:List.of("login","register")){getCommand(command).setExecutor(this);getCommand(command).setTabCompleter((s,c,a,args)->List.of());}
    getCommand("selene").setExecutor(new AccountAdminCommand(this,standalone,adminGateway,messages,p->!locked(p),this::reload));
@@ -151,7 +158,7 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
  private static int positiveInt(Properties props,String key){int value=Integer.parseInt(required(props,key));if(value<1||value>65535)throw new IllegalArgumentException("Setting must be a valid port: "+key);return value;}
  @Override public void onDisable(){
   for(Session s:sessions.values())s.player.kick(msg(s.player,"unavailable"));
- if(interactiveCaptcha!=null)interactiveCaptcha.close();sessions.clear();resourcePackStatuses.clear();if(presentationTask!=-1)Bukkit.getScheduler().cancelTask(presentationTask);if(gateway!=null)gateway.close();if(inventoryProtection!=null)inventoryProtection.shutdown();
+ if(interactiveCaptcha!=null)interactiveCaptcha.close();sessions.clear();resourcePackStatuses.clear();if(presentationTask!=-1)Bukkit.getScheduler().cancelTask(presentationTask);if(maintenanceTask!=-1)Bukkit.getScheduler().cancelTask(maintenanceTask);if(gateway!=null)gateway.close();if(inventoryProtection!=null)inventoryProtection.shutdown();
   getServer().getMessenger().unregisterIncomingPluginChannel(this,SESSION_CHANNEL,this);
   getServer().getMessenger().unregisterOutgoingPluginChannel(this,SESSION_CHANNEL);
   getServer().getMessenger().unregisterIncomingPluginChannel(this,MANAGEMENT_CHANNEL,this);
@@ -160,6 +167,8 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
  private net.kyori.adventure.text.Component msg(Player player,String key){return messages.forLocale(player.getLocale()).component("messages."+key);}
  private boolean locked(Player p){Session s=sessions.get(p.getUniqueId());return s==null||LimboLockPolicy.locked(s.auth.view().stage(),s.management!=null);}
  @EventHandler(priority=EventPriority.LOWEST) public void join(PlayerJoinEvent e){
+  if(maintenanceNode!=null)Bukkit.getScheduler().runTask(this,this::publishWhitelist);
+  if(networkNode)return;
   e.joinMessage(null);
   Player p=e.getPlayer();Object connection=packetEventsEnabled?inventoryProtection.open(p):null;
   if((packetEventsEnabled&&connection==null)||gateway==null){p.kick(msg(p,"unavailable"));return;}
@@ -177,8 +186,20 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
   s.player.setResourcePack(resourcePackDelivery.id(),resourcePackDelivery.url(),resourcePackDelivery.sha1(),prompt,true);
   getLogger().info("Обязательный resource pack отправлен игроку "+s.player.getName()+".");
  }
+ private boolean sendMaintenance(byte[] message){
+  Player carrier=getServer().getOnlinePlayers().stream().findFirst().orElse(null);if(carrier==null)return false;
+  carrier.sendPluginMessage(this,MANAGEMENT_CHANNEL,message);return true;
+ }
+ private void publishWhitelist(){
+  if(maintenanceNode==null)return;List<MaintenanceMessage.Entry> entries=new ArrayList<>();
+  for(OfflinePlayer player:getServer().getWhitelistedPlayers()){String name=player.getName();if(name!=null&&name.matches("[A-Za-z0-9_]{3,16}"))entries.add(new MaintenanceMessage.Entry(name,player.getUniqueId()));}
+  maintenanceNode.publish(entries);
+ }
  @Override public void onPluginMessageReceived(String channel,Player p,byte[] message){
-  if(standalone)return;
+  if(channel.equals(MANAGEMENT_CHANNEL)&&maintenanceNode!=null)try{
+   if(MaintenanceCodec.decode(message) instanceof MaintenanceMessage.State state){maintenanceNode.accept(state);return;}
+  }catch(IllegalArgumentException ignored){}
+  if(standalone||networkNode)return;
   Session s=sessions.get(p.getUniqueId());if(s==null||s.player!=p)return;
   if(channel.equals(MANAGEMENT_CHANNEL)){
    ManagementRequest.decode(message,s.auth.view().sessionId()).ifPresent(request->{

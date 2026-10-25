@@ -7,7 +7,7 @@ import java.util.Objects;
 
 final class PaperConfigValidator {
  record Settings(boolean compatibilityPasswordArguments,boolean titleEnabled){}
- private static final Set<String> ROOTS=Set.of("role","packet-events-mode","stage","captcha-view","captcha","dialogs","secure-input","timeout-seconds","effects","visibility","limbo","interactive-captcha","presentation","resource-pack-provider","messages","language","console");
+ private static final Set<String> ROOTS=Set.of("role","node-id","packet-events-mode","stage","captcha-view","captcha","dialogs","secure-input","timeout-seconds","effects","visibility","limbo","interactive-captcha","presentation","resource-pack-provider","messages","language","console");
  private PaperConfigValidator(){}
  static Settings validate(Map<String,Object> values){
   for(String path:values.keySet()){
@@ -15,7 +15,9 @@ final class PaperConfigValidator {
    String root=path.split("\\.",2)[0];if(!ROOTS.contains(root))throw new IllegalArgumentException("Unknown Paper setting: "+path);
   }
   bool(values,"language.auto-detect",true);bool(values,"console.banner",true);
-  requiredText(values,"role");requiredText(values,"packet-events-mode");requiredText(values,"stage");String captchaView=requiredText(values,"captcha-view").toUpperCase(java.util.Locale.ROOT);if(!Set.of("MAP","DIALOG_FONT","INTERACTIVE").contains(captchaView))throw new IllegalArgumentException("captcha-view must be MAP, DIALOG_FONT or INTERACTIVE");
+  String role=requiredText(values,"role");String nodeId=requiredText(values,"node-id");if(!nodeId.matches("[A-Za-z0-9_.-]{1,64}"))throw new IllegalArgumentException("node-id is invalid");
+  if(role.equals("NETWORK_NODE"))return new Settings(false,false);
+  requiredText(values,"packet-events-mode");requiredText(values,"stage");String captchaView=requiredText(values,"captcha-view").toUpperCase(java.util.Locale.ROOT);if(!Set.of("MAP","DIALOG_FONT","INTERACTIVE").contains(captchaView))throw new IllegalArgumentException("captcha-view must be MAP, DIALOG_FONT or INTERACTIVE");
   String mode=requiredText(values,"limbo.mode").toUpperCase(java.util.Locale.ROOT);if(!Set.of("MANAGED","EXISTING").contains(mode))throw new IllegalArgumentException("limbo.mode must be MANAGED or EXISTING");
   requiredText(values,"limbo.world");
   Object timeout=values.get("timeout-seconds");if(!(timeout instanceof Number number)||number.longValue()<10||number.longValue()>3600)throw new IllegalArgumentException("timeout-seconds must be between 10 and 3600");

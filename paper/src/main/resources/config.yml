@@ -6,6 +6,8 @@
 # к Rust backend обращается только Velocity.
 # STANDALONE — одиночный Paper без proxy. Используется standalone.properties.
 role: PROXY_AUTH
+# Unique Velocity server name. Gameplay servers use role NETWORK_NODE.
+node-id: auth
 
 # AUTO: включить PacketEvents только в STANDALONE, где нужно скрывать реальный
 # инвентарь игрока. На выделенном PROXY_AUTH инвентарь и так пустой.

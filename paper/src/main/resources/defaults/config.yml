@@ -7,7 +7,10 @@
 # PROXY_AUTH — выделенный auth-сервер за Velocity. Используется relay.properties;
 # к Rust backend обращается только Velocity.
 # STANDALONE — одиночный Paper без proxy. Используется standalone.properties.
+# NETWORK_NODE — gameplay Paper: только whitelist/state sync и maintenance diagnostics.
 role: "PROXY_AUTH"
+# Уникальное имя этого сервера из velocity.toml.
+node-id: "auth"
 # BEFORE_JOIN: в связке с Velocity игрок сначала попадает в limbo auth-сервера,
 # проходит CAPTCHA/пароль и лишь затем впервые подключается к игровому серверу.
 # AFTER_JOIN: тот же защищённый limbo-flow для одиночного Paper.

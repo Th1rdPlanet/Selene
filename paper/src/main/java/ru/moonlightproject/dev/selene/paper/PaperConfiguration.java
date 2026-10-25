@@ -13,7 +13,7 @@ import java.util.function.Function;
 /** Split files are authoritative. Migration finishes by replacing config.yml last. */
 final class PaperConfiguration {
     private static final Map<String,Set<String>> ROOTS = Map.of(
-        "config.yml",Set.of("role","stage","language","console"),
+        "config.yml",Set.of("role","node-id","stage","language","console"),
         "interface.yml",Set.of("captcha-view","captcha","dialogs","presentation","resource-pack-provider"),
         "protection.yml",Set.of("packet-events-mode","secure-input","timeout-seconds","effects","visibility"),
         "limbo.yml",Set.of("limbo"),
