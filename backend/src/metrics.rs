@@ -139,13 +139,16 @@ impl Metrics {
             .with_label_values(&[known(op, ADMIN_OPS), known(status, STATUSES)])
             .inc();
     }
-    pub fn sessions(&self, pending: usize, authenticated: usize) {
+    pub fn sessions(&self, pending: usize, authenticated: usize, maintenance: usize) {
         self.sessions
             .with_label_values(&["pending"])
             .set(pending as i64);
         self.sessions
             .with_label_values(&["authenticated"])
             .set(authenticated as i64);
+        self.sessions
+            .with_label_values(&["maintenance"])
+            .set(maintenance as i64);
     }
 }
 
@@ -191,7 +194,7 @@ mod tests {
         metrics.auth("login", "AUTHENTICATED", Duration::from_millis(40));
         metrics.auth("../../etc", "<script>", Duration::ZERO);
         metrics.admin("resetTotp", "OK");
-        metrics.sessions(3, 2);
+        metrics.sessions(3, 2, 1);
         let mut text = Vec::new();
         prometheus::TextEncoder::new()
             .encode(&registry.gather(), &mut text)
@@ -203,6 +206,7 @@ mod tests {
         assert!(text.contains(r#"selene_auth_requests_total{op="other",status="other"} 1"#));
         assert!(text.contains(r#"selene_admin_requests_total{op="resetTotp",status="OK"} 1"#));
         assert!(text.contains(r#"selene_sessions{state="authenticated"} 2"#));
+        assert!(text.contains(r#"selene_sessions{state="maintenance"} 1"#));
         assert!(!text.contains("etc"));
     }
 }

@@ -326,12 +326,14 @@ async fn run() -> anyhow::Result<()> {
             async move {
                 let started = std::time::Instant::now();
                 let mut op = String::from("unparsed");
+                let mut maintenance_revision = 0_u64;
                 let reply = if body.len() > 262144 {
                     Reply::status("INVALID_REQUEST", "")
                 } else if let Ok(_permit) = requests.try_acquire_owned() {
                     match serde_json::from_slice::<Request>(&body) {
                         Ok(request) => {
                             op.clone_from(&request.op);
+                            maintenance_revision = request.maintenance_revision;
                             service.handle(request).await
                         }
                         Err(_) => Reply::status("INVALID_REQUEST", ""),
@@ -344,10 +346,11 @@ async fn run() -> anyhow::Result<()> {
                 }
                 traces::annotate(
                     format!("Auth/{}", metrics::operation(&op)),
-                    vec![KeyValue::new(
-                        "selene.status",
-                        metrics::status(&reply.status),
-                    )],
+                    vec![
+                        KeyValue::new("selene.status", metrics::status(&reply.status)),
+                        KeyValue::new("selene.maintenance", maintenance_revision > 0),
+                        KeyValue::new("selene.maintenance_revision", maintenance_revision as i64),
+                    ],
                 );
                 let encoded = serde_json::to_vec(&reply).expect("serializable reply");
                 Ok(if encoded.len() <= 262144 {
@@ -487,8 +490,8 @@ async fn serve_metrics(
         tokio::spawn(async move {
             let mut request = [0u8; 1024];
             let _ = tokio::time::timeout(Duration::from_secs(5), stream.read(&mut request)).await;
-            if let Some((pending, authenticated)) = service.session_counts() {
-                selene.sessions(pending, authenticated);
+            if let Some((pending, authenticated, maintenance)) = service.session_counts() {
+                selene.sessions(pending, authenticated, maintenance);
             }
             exporter.try_update(transport.snapshot());
             let body = exporter.render().unwrap_or_default();

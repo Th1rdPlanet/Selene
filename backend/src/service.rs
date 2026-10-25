@@ -213,13 +213,14 @@ impl Service {
         })
     }
     /// Pending and authenticated session counts for metrics; None while the table is busy.
-    pub fn session_counts(&self) -> Option<(usize, usize)> {
+    pub fn session_counts(&self) -> Option<(usize, usize, usize)> {
         let sessions = self.sessions.try_lock().ok()?;
         let authenticated = sessions
             .values()
             .filter(|s| s.authenticated.is_some())
             .count();
-        Some((sessions.len() - authenticated, authenticated))
+        let maintenance = sessions.values().filter(|s| s.maintenance_revision > 0).count();
+        Some((sessions.len() - authenticated, authenticated, maintenance))
     }
     pub async fn handle(&self, mut r: Request) -> Reply {
         let id = r.session.clone();

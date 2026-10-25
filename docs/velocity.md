@@ -1,6 +1,8 @@
 # Selene на Velocity
 
-Установите shaded JAR из `velocity/build/libs` и настройте `plugins/selene/velocity.properties`. Здесь находятся только proxy-настройки: Rust backend, mTLS relay для auth Paper, admission, маршрутизация и сообщения. Мир limbo и интерфейс задаются только на auth Paper.
+Установите shaded JAR из `velocity/build/libs`. Proxy-настройки разделены между YAML-файлами в `plugins/selene`; maintenance-политика находится в `maintenance.yml`. Мир limbo и интерфейс задаются только на auth Paper.
+
+Maintenance включается только Java API плагина: `SeleneApi.find(proxy)` и `setMaintenance(...)`; команды включения намеренно нет. Режим действует на всю сеть и допускает только уже известный Selene аккаунт, чей ник присутствует хотя бы в одном ванильном whitelist подключённых Paper-серверов. `require-trusted-ip` дополнительно требует прежнюю точную пару ник/IP, а `require-premium` — лицензионный аккаунт с online-mode handshake. Для CAPTCHA, пароля и TOTP отдельные `enable-*` определяют, показывается ли этап, а `verify-*` — проверяется ли введённое значение. Нельзя проверять выключенный этап. При `elevate-selene-commands` вошедший через maintenance игрок получает консольный уровень только внутри `/selene`; права других плагинов не меняются.
 
 `auth-server` и `default-server` — имена из `velocity.toml`. До авторизации игрок допускается только на auth-server; после успешного входа он возвращается на последний игровой сервер либо на default-server. Velocity создаёт session UUID для физического подключения и доставляет его через точный `ServerConnection`; Paper подтверждает token. Повторная доставка ограничена, а отсутствие подтверждения завершает соединение.
 
