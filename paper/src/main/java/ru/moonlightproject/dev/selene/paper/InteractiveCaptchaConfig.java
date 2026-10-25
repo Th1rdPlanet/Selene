@@ -8,7 +8,7 @@ public record InteractiveCaptchaConfig(String world,int timeoutSeconds,int maxMi
  public enum FloorPattern { SOLID,RANDOM,CHECKERBOARD }
  public record Isolation(boolean hidePlayers,boolean hideTabList,boolean hideNameTags,boolean suppressChat){}
  public record Display(boolean title,boolean actionbar,boolean scoreboard){}
- public record Decoration(boolean enabled,String borderMaterial,String railingMaterial,String lampBaseMaterial,String lightMaterial){}
+ public record Decoration(boolean enabled,String soilMaterial,List<String> rockMaterials,String bushMaterial,List<String> floraMaterials,int floraDensity){}
  public record Platform(int width,int length,FloorPattern floorPattern,List<String> floorMaterials,String boundaryMaterial,Decoration decoration){}
  public record Generation(int attempts,int minTargetDistance,int decoys){}
  public record ScenarioConfig(boolean enabled,int weight,String targetMaterial,String challengeItem){
@@ -20,7 +20,7 @@ public record InteractiveCaptchaConfig(String world,int timeoutSeconds,int maxMi
   String world=text(root,"world");
   int timeout=bounded(root,"timeout-seconds",10,300);
   int mistakes=bounded(root,"max-mistakes",1,10);
-  int width=bounded(root,"platform.width",5,32),length=bounded(root,"platform.length",5,32);
+  int width=bounded(root,"platform.width",16,32),length=bounded(root,"platform.length",16,32);
   int spacing=bounded(root,"arena-spacing",Math.max(width,length)+16,4096);
   FloorPattern pattern=enumValue(root,"platform.floor-pattern",FloorPattern.class);
   List<String> names=root.getStringList("platform.floor-materials");
@@ -28,10 +28,11 @@ public record InteractiveCaptchaConfig(String world,int timeoutSeconds,int maxMi
   List<String> floor=names.stream().map(name->material("platform.floor-materials",name)).toList();
   String boundary=material("platform.boundary-material",text(root,"platform.boundary-material"));
   Decoration decoration=new Decoration(root.getBoolean("platform.decoration.enabled",true),
-      material("platform.decoration.border-material",root.getString("platform.decoration.border-material","POLISHED_ANDESITE")),
-      material("platform.decoration.railing-material",root.getString("platform.decoration.railing-material","STONE_BRICK_WALL")),
-      material("platform.decoration.lamp-base-material",root.getString("platform.decoration.lamp-base-material","CHISELED_STONE_BRICKS")),
-      material("platform.decoration.light-material",root.getString("platform.decoration.light-material","SEA_LANTERN")));
+      material("platform.decoration.soil-material",root.getString("platform.decoration.soil-material","DIRT")),
+      materials(root,"platform.decoration.rock-materials",List.of("STONE","ANDESITE","TUFF","COBBLESTONE")),
+      material("platform.decoration.bush-material",root.getString("platform.decoration.bush-material","OAK_LEAVES")),
+      materials(root,"platform.decoration.flora-materials",List.of("SHORT_GRASS","FERN","DANDELION","POPPY","CORNFLOWER","OXEYE_DAISY","AZURE_BLUET")),
+      bounded(root,"platform.decoration.flora-density",0,100,35));
   Generation generation=new Generation(bounded(root,"generation.attempts",1,128),
       bounded(root,"generation.min-target-distance",1,30),bounded(root,"generation.decoys",0,32));
   ConfigurationSection section=root.getConfigurationSection("scenarios");
@@ -60,11 +61,17 @@ public record InteractiveCaptchaConfig(String world,int timeoutSeconds,int maxMi
   if(!material.matches("[A-Z0-9_]+")||unsafe.contains(material))throw bad(path,"contains unsafe material '"+name+"'");
   return material;
  }
+ private static List<String> materials(ConfigurationSection root,String path,List<String> fallback){
+  List<String> names=root.isList(path)?root.getStringList(path):fallback;
+  if(names.isEmpty())throw bad(path,"must contain at least one material");
+  return names.stream().map(name->material(path,name)).toList();
+ }
  private static <E extends Enum<E>> E enumValue(ConfigurationSection root,String path,Class<E> type){
   try{return Enum.valueOf(type,text(root,path).toUpperCase(Locale.ROOT));}catch(IllegalArgumentException e){throw bad(path,"has an unsupported value");}
  }
  private static String text(ConfigurationSection root,String path){String value=root.getString(path);if(value==null||value.isBlank())throw bad(path,"must not be empty");return value.trim();}
  private static int bounded(ConfigurationSection root,String path,int min,int max){int value=root.getInt(path,Integer.MIN_VALUE);if(value<min||value>max)throw bad(path,"must be between "+min+" and "+max);return value;}
+ private static int bounded(ConfigurationSection root,String path,int min,int max,int fallback){return root.contains(path)?bounded(root,path,min,max):fallback;}
  private static IllegalArgumentException bad(String path,String message){return new IllegalArgumentException("interactive-captcha."+path+" "+message);}
  private static String defaultTarget(String key){return switch(key){case "break-block"->"COAL_ORE";case "chop-tree"->"OAK_LOG";case "take-from-chest","put-in-chest"->"CHEST";case "armor-stand"->"ARMOR_STAND";case "press-button"->"STONE_BUTTON";case "toggle-lever"->"LEVER";case "stand-on-block"->"GOLD_BLOCK";case "item-frame"->"ITEM_FRAME";default->throw bad("scenarios."+key,"is unknown");};}
 }

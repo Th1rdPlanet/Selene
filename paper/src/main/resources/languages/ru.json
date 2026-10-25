@@ -138,7 +138,7 @@
   "interactive-captcha.instructions.toggle-lever": "<aqua>Найдите и переключите рычаг.</aqua>",
   "interactive-captcha.instructions.stand-on-block": "<aqua>Встаньте на золотой блок.</aqua>",
   "interactive-captcha.instructions.put-in-chest": "<aqua>Положите выданный изумруд в сундук.</aqua>",
-  "interactive-captcha.instructions.item-frame": "<aqua>Подойдите к рамке и нажмите на неё.</aqua>",
+  "interactive-captcha.instructions.item-frame": "<aqua>Подойдите к рамке и заберите из неё изумруд.</aqua>",
   "interactive-captcha.title": "<gradient:#8b5cf6:#38bdf8><bold>ПРОВЕРКА</bold></gradient>",
   "interactive-captcha.scoreboard-title": "<aqua><bold>ЗАДАНИЕ</bold></aqua>",
   "interactive-captcha.time": "<dark_gray>•</dark_gray> <white><seconds> сек.</white>"

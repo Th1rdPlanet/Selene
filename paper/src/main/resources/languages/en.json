@@ -138,7 +138,7 @@
   "interactive-captcha.instructions.toggle-lever": "<aqua>Find and toggle the lever.</aqua>",
   "interactive-captcha.instructions.stand-on-block": "<aqua>Stand on the gold block.</aqua>",
   "interactive-captcha.instructions.put-in-chest": "<aqua>Put the provided emerald into the chest.</aqua>",
-  "interactive-captcha.instructions.item-frame": "<aqua>Walk to the item frame and interact with it.</aqua>",
+  "interactive-captcha.instructions.item-frame": "<aqua>Walk to the item frame and take the emerald out of it.</aqua>",
   "interactive-captcha.title": "<gradient:#8b5cf6:#38bdf8><bold>VERIFICATION</bold></gradient>",
   "interactive-captcha.scoreboard-title": "<aqua><bold>TASK</bold></aqua>",
   "interactive-captcha.time": "<dark_gray>•</dark_gray> <white><seconds>s</white>"

@@ -26,34 +26,48 @@ interactive-captcha:
     # Задание и оставшееся время в боковой панели.
     scoreboard: true
   platform:
-    # Ширина пола в блоках.
-    width: 16
-    # Длина пола в блоках.
-    length: 16
-    # SOLID, RANDOM или CHECKERBOARD.
-    floor-pattern: "RANDOM"
-    # При RANDOM каждый блок пола независимо выбирается из списка.
+    # Размер области под парящий остров; его контур, подбрюшье и декор каждый раз новые.
+    width: 20
+    # Длина области под остров в блоках (16–32).
+    length: 20
+    # Узор верхнего слоя: SOLID, RANDOM или CHECKERBOARD.
+    floor-pattern: "SOLID"
+    # Блоки верхнего слоя. Трава и цветы растут только на земляных блоках (GRASS_BLOCK, MOSS_BLOCK, PODZOL…).
     floor-materials:
-      - STONE
-      - ANDESITE
-    # Невидимая граница, не позволяющая уйти на соседнюю арену.
+      - GRASS_BLOCK
+    # Невидимая граница в два блока вдоль береговой линии острова.
     boundary-material: BARRIER
     decoration:
-      # Добавлять бордюр, ограждение с проходами и четыре световые стойки.
+      # Конусное подбрюшье из земли и камня, трава, цветы, кусты по краю и свисающие корни.
       enabled: true
-      # Материал контрастного бордюра платформы.
-      border-material: POLISHED_ANDESITE
-      # Материал невысокого ограждения по краям.
-      railing-material: STONE_BRICK_WALL
-      # Основание угловых световых стоек.
-      lamp-base-material: CHISELED_STONE_BRICKS
-      # Светящийся блок наверху стойки.
-      light-material: SEA_LANTERN
+      # Два слоя сразу под поверхностью.
+      soil-material: DIRT
+      # Глубже — случайный камень из списка.
+      rock-materials:
+        - STONE
+        - ANDESITE
+        - TUFF
+        - COBBLESTONE
+      # Невысокие кусты по краю острова.
+      bush-material: OAK_LEAVES
+      # Одноблочные растения на поверхности; повтор в списке повышает частоту.
+      flora-materials:
+        - SHORT_GRASS
+        - SHORT_GRASS
+        - SHORT_GRASS
+        - FERN
+        - DANDELION
+        - POPPY
+        - CORNFLOWER
+        - OXEYE_DAISY
+        - AZURE_BLUET
+      # Процент свободных клеток с растением (0–100). Клики по траве, цветам и листве не считаются ошибкой.
+      flora-density: 35
   generation:
-    # Максимум попыток подобрать непересекающиеся случайные позиции.
+    # Сколько контуров острова перебрать, пока для цели не найдётся место.
     attempts: 32
-    # Минимальный отступ цели от края платформы.
-    min-target-distance: 4
+    # Минимальное расстояние от цели до края острова.
+    min-target-distance: 3
     # Число безопасных отвлекающих блоков.
     decoys: 5
   scenarios:

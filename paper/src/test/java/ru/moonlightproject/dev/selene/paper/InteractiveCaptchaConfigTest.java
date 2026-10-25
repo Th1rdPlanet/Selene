@@ -13,9 +13,9 @@ class InteractiveCaptchaConfigTest {
    assertNotNull(in);yaml.loadFromString(new String(in.readAllBytes(),StandardCharsets.UTF_8));
   }
   InteractiveCaptchaConfig config=InteractiveCaptchaConfig.parse(yaml.getConfigurationSection("interactive-captcha"));
-  assertEquals(16,config.platform().width());assertEquals(InteractiveCaptchaConfig.FloorPattern.RANDOM,config.platform().floorPattern());
-  assertEquals(2,config.platform().floorMaterials().size());assertEquals(9,config.scenarios().size());
-  assertTrue(config.platform().decoration().enabled());assertEquals("POLISHED_ANDESITE",config.platform().decoration().borderMaterial());
+  assertEquals(20,config.platform().width());assertEquals(InteractiveCaptchaConfig.FloorPattern.SOLID,config.platform().floorPattern());
+  assertEquals(java.util.List.of("GRASS_BLOCK"),config.platform().floorMaterials());assertEquals(9,config.scenarios().size());
+  assertTrue(config.platform().decoration().enabled());assertEquals("DIRT",config.platform().decoration().soilMaterial());assertEquals(35,config.platform().decoration().floraDensity());
   assertThrows(UnsupportedOperationException.class,()->config.scenarios().clear());
  }
  @Test void invalidBoundsAndUnsafeMaterialsNameFullPath(){
@@ -23,7 +23,11 @@ class InteractiveCaptchaConfigTest {
   assertTrue(assertThrows(IllegalArgumentException.class,()->parse(small)).getMessage().contains("interactive-captcha.platform.width"));
   YamlConfiguration unsafe=base();unsafe.set("interactive-captcha.platform.floor-materials",java.util.List.of("TNT"));
   assertTrue(assertThrows(IllegalArgumentException.class,()->parse(unsafe)).getMessage().contains("interactive-captcha.platform.floor-materials"));
+  YamlConfiguration flora=base();flora.set("interactive-captcha.platform.decoration.flora-materials",java.util.List.of("LAVA"));
+  assertTrue(assertThrows(IllegalArgumentException.class,()->parse(flora)).getMessage().contains("interactive-captcha.platform.decoration.flora-materials"));
+  YamlConfiguration density=base();density.set("interactive-captcha.platform.decoration.flora-density",101);
+  assertTrue(assertThrows(IllegalArgumentException.class,()->parse(density)).getMessage().contains("interactive-captcha.platform.decoration.flora-density"));
  }
  private static InteractiveCaptchaConfig parse(YamlConfiguration yaml){return InteractiveCaptchaConfig.parse(yaml.getConfigurationSection("interactive-captcha"));}
- private static YamlConfiguration base(){YamlConfiguration y=new YamlConfiguration();y.set("interactive-captcha.world","world");y.set("interactive-captcha.timeout-seconds",120);y.set("interactive-captcha.max-mistakes",2);y.set("interactive-captcha.arena-spacing",64);y.set("interactive-captcha.platform.width",10);y.set("interactive-captcha.platform.length",10);y.set("interactive-captcha.platform.floor-pattern","RANDOM");y.set("interactive-captcha.platform.floor-materials",java.util.List.of("STONE"));y.set("interactive-captcha.platform.boundary-material","BARRIER");y.set("interactive-captcha.generation.attempts",10);y.set("interactive-captcha.generation.min-target-distance",2);y.set("interactive-captcha.generation.decoys",1);y.set("interactive-captcha.scenarios.break-block.enabled",true);y.set("interactive-captcha.scenarios.break-block.weight",1);return y;}
+ private static YamlConfiguration base(){YamlConfiguration y=new YamlConfiguration();y.set("interactive-captcha.world","world");y.set("interactive-captcha.timeout-seconds",120);y.set("interactive-captcha.max-mistakes",2);y.set("interactive-captcha.arena-spacing",64);y.set("interactive-captcha.platform.width",16);y.set("interactive-captcha.platform.length",16);y.set("interactive-captcha.platform.floor-pattern","RANDOM");y.set("interactive-captcha.platform.floor-materials",java.util.List.of("STONE"));y.set("interactive-captcha.platform.boundary-material","BARRIER");y.set("interactive-captcha.generation.attempts",10);y.set("interactive-captcha.generation.min-target-distance",2);y.set("interactive-captcha.generation.decoys",1);y.set("interactive-captcha.scenarios.break-block.enabled",true);y.set("interactive-captcha.scenarios.break-block.weight",1);return y;}
 }
