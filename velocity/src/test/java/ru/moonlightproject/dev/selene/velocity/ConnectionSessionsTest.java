@@ -6,6 +6,7 @@ import java.net.InetAddress;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import ru.moonlightproject.dev.selene.core.AuthRequest;
+import ru.moonlightproject.dev.selene.core.MaintenanceMessage;
 
 class ConnectionSessionsTest {
     @Test
@@ -54,6 +55,17 @@ class ConnectionSessionsTest {
         AuthRequest bound=sessions.authorizeRelay(connection,forged).orElseThrow();
         assertTrue(bound.passwordTrusted());
         assertFalse(bound.totpTrusted());
+    }
+
+    @Test void maintenancePolicyIsBoundToTheProxySession() throws Exception {
+        ConnectionSessions sessions=new ConnectionSessions(16);UUID connection=UUID.randomUUID();
+        var policy=new MaintenanceMessage.Policy(true,false,true,false,true,false,true,false,true);
+        ConnectionSessions.Session session=sessions.open(connection,"Player_1",
+            InetAddress.getByName("198.51.100.7"),false,true,false,false,42,policy).session();
+
+        assertEquals(42,session.maintenanceRevision());
+        assertEquals(policy,session.maintenancePolicy());
+        assertSame(policy,sessions.get(connection).orElseThrow().maintenancePolicy());
     }
 
     @Test

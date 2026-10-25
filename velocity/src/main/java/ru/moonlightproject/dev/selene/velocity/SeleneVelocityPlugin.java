@@ -47,6 +47,8 @@ import ru.moonlightproject.dev.selene.core.BackendGateway;
 import ru.moonlightproject.dev.selene.core.ForkCapabilities;
 import ru.moonlightproject.dev.selene.core.RelayServer;
 import ru.moonlightproject.dev.selene.core.TlsContexts;
+import ru.moonlightproject.dev.selene.core.MaintenanceCodec;
+import ru.moonlightproject.dev.selene.core.MaintenanceMessage;
 import ru.moonlightproject.dev.selene.api.MaintenanceState;
 import ru.moonlightproject.dev.selene.api.SeleneApi;
 
@@ -67,6 +69,8 @@ public final class SeleneVelocityPlugin implements SeleneApi {
     private final Logger logger;
     private final Path dataDirectory;
     private final MaintenanceController maintenance;
+    private final WhitelistRegistry maintenanceWhitelists = new WhitelistRegistry();
+    private final Map<String, Long> maintenanceAcknowledgements = new ConcurrentHashMap<>();
     private final Set<UUID> authenticated = ConcurrentHashMap.newKeySet();
     private final Set<UUID> onlineProofConnections = ConcurrentHashMap.newKeySet();
     private final Set<String> trustedPremiumAdmissions = ConcurrentHashMap.newKeySet();
@@ -82,9 +86,11 @@ public final class SeleneVelocityPlugin implements SeleneApi {
         this.proxy = proxy;
         this.logger = logger;
         this.dataDirectory = dataDirectory;
-        this.maintenance = new MaintenanceController(System::currentTimeMillis, state ->
+        this.maintenance = new MaintenanceController(System::currentTimeMillis, state -> {
             logger.warn("Selene maintenance changed: enabled={} revision={} actor={} reason={}",
-                state.enabled(), state.revision(), state.actor(), state.reason()));
+                state.enabled(), state.revision(), state.actor(), state.reason());
+            broadcastMaintenance(state);
+        });
     }
 
     @Override public MaintenanceState maintenance() { return maintenance.maintenance(); }
@@ -144,7 +150,7 @@ public final class SeleneVelocityPlugin implements SeleneApi {
                     (request, fingerprint) -> relay(request, fingerprint));
                 runtime = new RuntimeState(
                     config, messages, backend, admission, attacks, sessions, authenticationGrace, identities, premiumLookup,
-                    premiumTrust, twoFactorRoutes, relay, fork, new ProtectionState(
+                    premiumTrust, twoFactorRoutes, relay, fork, files.maintenance(), new ProtectionState(
                         change -> logger.info(messages.plain("protection-change",
                             VelocityMessages.literal("previous",change.previous().name()),VelocityMessages.literal("current",change.current().name()),
                             VelocityMessages.literal("source",change.source()),VelocityMessages.literal("reason",change.reason()))),
@@ -154,7 +160,8 @@ public final class SeleneVelocityPlugin implements SeleneApi {
                 proxy.getCommandManager().register(proxy.getCommandManager().metaBuilder("selene").plugin(this).build(),
                     new SeleneCommand(backend,()->runtime==null?messages:runtime.messages(),logger,new CommandOperations(),this::isAuthenticated,
                         ()->proxy.getAllPlayers().stream().map(Player::getUsername),
-                        player->config.commandAdmins().contains(player.getUsername().toLowerCase(Locale.ROOT))));
+                        player->config.commandAdmins().contains(player.getUsername().toLowerCase(Locale.ROOT))
+                            || maintenanceCommandAccess(player)));
                 String[] twoFactorAliases = java.util.Arrays.stream(config.twoFactorCommandAliases().split(","))
                     .map(String::trim).filter(alias -> alias.matches("[a-zA-Z0-9_-]{1,24}"))
                     .distinct().toArray(String[]::new);
@@ -190,6 +197,33 @@ public final class SeleneVelocityPlugin implements SeleneApi {
         String ip = event.getConnection().getRemoteAddress().getAddress().getHostAddress();
         String username = event.getUsername();
         long now = System.currentTimeMillis();
+        MaintenanceState maintenanceState = maintenance.maintenance();
+        if (maintenanceState.enabled()) {
+            AuthRequest request = new AuthRequest(
+                "profile", UUID.randomUUID().toString(), username, ip, "", "", false, false);
+            return EventTask.resumeWhenComplete(state.backend().call(request).handle((reply, error) -> {
+                if (error != null || reply == null) {
+                    event.setResult(PreLoginEvent.PreLoginComponentResult.denied(text("backend-unavailable")));
+                    return null;
+                }
+                boolean premium = reply.status().equals("ACCOUNT_PREMIUM");
+                boolean known = premium || reply.status().equals("ACCOUNT_OFFLINE");
+                MaintenanceAdmission.Decision decision = MaintenanceAdmission.decide(
+                    state.maintenancePolicy(), maintenanceWhitelists.contains(username), known,
+                    state.admission().isGreen(username, ip), premium);
+                if (!decision.allowed()) {
+                    logger.warn("Maintenance admission denied: player={} reason={} revision={}",
+                        username.replaceAll("[^A-Za-z0-9_]", "?"), decision.reason(), maintenanceState.revision());
+                    event.setResult(PreLoginEvent.PreLoginComponentResult.denied(
+                        Component.text("Server is in maintenance mode")));
+                } else {
+                    event.setResult(premium
+                        ? PreLoginEvent.PreLoginComponentResult.forceOnlineMode()
+                        : PreLoginEvent.PreLoginComponentResult.forceOfflineMode());
+                }
+                return null;
+            }));
+        }
         state.attacks().observe(ip, username, now);
         AttackLevel level = currentLevel(state, now);
         AttackProfile profile=state.config().attackProfiles().get(level);
@@ -249,9 +283,14 @@ public final class SeleneVelocityPlugin implements SeleneApi {
         ConnectionSessions.Session session;
         try {
             UUID connectionId = state.identities().open(player);
+            MaintenanceState maintenanceState = maintenance.maintenance();
+            MaintenanceMessage.Policy sessionPolicy = maintenanceState.enabled()
+                ? wirePolicy(state.maintenancePolicy())
+                : new MaintenanceMessage.Policy(false,false,true,true,true,true,true,true,false);
             ConnectionSessions.Opened opened = state.sessions().open(
                 connectionId, player.getUsername(), player.getRemoteAddress().getAddress(),
-                premium, captcha, !premium && grace.password(), grace.totp());
+                premium, captcha, !premium && grace.password(), grace.totp(),
+                maintenanceState.enabled() ? maintenanceState.revision() : 0, sessionPolicy);
             session = opened.session();
             if (player.isOnlineMode()) onlineProofConnections.add(connectionId);
             if (opened.replaced() != null) closeReplacedSession(state, opened.replaced());
@@ -321,7 +360,12 @@ public final class SeleneVelocityPlugin implements SeleneApi {
             && !event.getIdentifier().equals(MANAGEMENT_CHANNEL)) return;
         event.setResult(PluginMessageEvent.ForwardResult.handled());
         RuntimeState state = runtime;
-        if (state == null || event.getData().length != 16 || !(event.getSource() instanceof ServerConnection source)
+        if (state == null || !(event.getSource() instanceof ServerConnection source)) return;
+        if (event.getIdentifier().equals(MANAGEMENT_CHANNEL) && event.getData().length != 16) {
+            receiveMaintenance(source, event.getData());
+            return;
+        }
+        if (event.getData().length != 16
             || !source.getServerInfo().getName().equals(state.config().authServer())) return;
         UUID token = uuid(event.getData());
         Optional<UUID> identity = state.identities().get(source.getPlayer());
@@ -502,6 +546,53 @@ public final class SeleneVelocityPlugin implements SeleneApi {
             logger.debug("Snapshot failure details",error);
             return null;
         });
+    }
+
+    private void receiveMaintenance(ServerConnection source, byte[] payload) {
+        String actualServer = source.getServerInfo().getName();
+        try {
+            MaintenanceMessage message = MaintenanceCodec.decode(payload);
+            if (message instanceof MaintenanceMessage.Whitelist whitelist
+                && whitelist.serverId().equals(actualServer)) {
+                maintenanceWhitelists.replace(actualServer, whitelist.revision(), whitelist.entries());
+            } else if (message instanceof MaintenanceMessage.Ack ack
+                && ack.serverId().equals(actualServer)
+                && ack.revision() == maintenance.maintenance().revision()) {
+                maintenanceAcknowledgements.put(actualServer, ack.revision());
+            } else return;
+            updateMaintenanceTopology();
+        } catch (IllegalArgumentException malformed) {
+            logger.warn("Rejected malformed maintenance message from {}", actualServer);
+        }
+    }
+
+    private void broadcastMaintenance(MaintenanceState state) {
+        RuntimeState active = runtime;
+        if (active == null) return;
+        maintenanceAcknowledgements.clear();
+        byte[] payload = MaintenanceCodec.encode(new MaintenanceMessage.State(
+            state.revision(), state.enabled(), wirePolicy(active.maintenancePolicy()), state.actor(), state.reason()));
+        for (RegisteredServer server : proxy.getAllServers()) server.sendPluginMessage(MANAGEMENT_CHANNEL, payload);
+        updateMaintenanceTopology();
+    }
+
+    private void updateMaintenanceTopology() {
+        long revision = maintenance.maintenance().revision();
+        int acknowledged = (int) maintenanceAcknowledgements.values().stream()
+            .filter(value -> value == revision).count();
+        maintenance.updateTopology(maintenanceWhitelists.unionSize(), proxy.getAllServers().size(), acknowledged);
+    }
+
+    private boolean maintenanceCommandAccess(Player player) {
+        RuntimeState state = runtime;
+        return state != null && maintenance.maintenance().enabled()
+            && state.maintenancePolicy().elevateSeleneCommands() && isAuthenticated(player);
+    }
+
+    private static MaintenanceMessage.Policy wirePolicy(MaintenancePolicy policy) {
+        return new MaintenanceMessage.Policy(policy.requireTrustedIp(),policy.requirePremium(),
+            policy.enableCaptcha(),policy.verifyCaptcha(),policy.enablePassword(),policy.verifyPassword(),
+            policy.enableTotp(),policy.verifyTotp(),policy.elevateSeleneCommands());
     }
 
     private String destinationFor(Player player, VelocityConfig config) {
@@ -712,6 +803,7 @@ public final class SeleneVelocityPlugin implements SeleneApi {
         TwoFactorRoutes twoFactorRoutes,
         RelayServer relay,
         ForkCapabilities fork,
+        MaintenancePolicy maintenancePolicy,
         ProtectionState protection
     ) {}
 }

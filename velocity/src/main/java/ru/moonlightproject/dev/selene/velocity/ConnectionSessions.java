@@ -12,6 +12,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.LongSupplier;
 import ru.moonlightproject.dev.selene.core.AuthReply;
 import ru.moonlightproject.dev.selene.core.AuthRequest;
+import ru.moonlightproject.dev.selene.core.MaintenanceMessage;
 
 /** Connection-bound authentication state owned by the proxy. */
 final class ConnectionSessions {
@@ -24,7 +25,9 @@ final class ConnectionSessions {
         boolean premium,
         boolean captchaRequired,
         boolean passwordTrusted,
-        boolean totpTrusted
+        boolean totpTrusted,
+        long maintenanceRevision,
+        MaintenanceMessage.Policy maintenancePolicy
     ) {}
     record Opened(Session session, Session replaced) {}
 
@@ -53,10 +56,15 @@ final class ConnectionSessions {
         boolean premium,
         boolean captchaRequired
     ) {
-        return open(connectionId, username, address, premium, captchaRequired, false, false);
+        return open(connectionId, username, address, premium, captchaRequired, false, false, 0, normalPolicy());
     }
     synchronized Opened open(UUID connectionId,String username,InetAddress address,boolean premium,
         boolean captchaRequired,boolean passwordTrusted,boolean totpTrusted) {
+        return open(connectionId,username,address,premium,captchaRequired,passwordTrusted,totpTrusted,0,normalPolicy());
+    }
+    synchronized Opened open(UUID connectionId,String username,InetAddress address,boolean premium,
+        boolean captchaRequired,boolean passwordTrusted,boolean totpTrusted,long maintenanceRevision,
+        MaintenanceMessage.Policy maintenancePolicy) {
         if (!byConnection.containsKey(connectionId) && byConnection.size() >= capacity) {
             throw new IllegalStateException("authentication session capacity reached");
         }
@@ -68,7 +76,8 @@ final class ConnectionSessions {
         clearAuthorization(connectionId);
         Session session = new Session(
             UUID.randomUUID(), connectionId, username, canonical, address, premium, captchaRequired,
-            passwordTrusted, totpTrusted);
+            passwordTrusted, totpTrusted, maintenanceRevision,
+            java.util.Objects.requireNonNull(maintenancePolicy, "maintenancePolicy"));
         byConnection.put(connectionId, session);
         return new Opened(session, replaced);
     }
@@ -176,5 +185,9 @@ final class ConnectionSessions {
         } catch (ArithmeticException ignored) {
             return Long.MAX_VALUE;
         }
+    }
+
+    private static MaintenanceMessage.Policy normalPolicy() {
+        return new MaintenanceMessage.Policy(false,false,true,true,true,true,true,true,false);
     }
 }
