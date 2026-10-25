@@ -1,0 +1,18 @@
+# Selene maintenance policy. The vanilla username whitelist and an existing
+# Selene account are ALWAYS required and cannot be disabled here.
+
+# Require the incoming address to match the account's current unexpired trusted IP.
+require-trusted-ip: true
+# Require cryptographic premium proof and a premium Selene account.
+require-premium: false
+
+# Each factor can be shown/skipped independently from verifying its input.
+enable-captcha: true
+verify-captcha: false
+enable-password: true
+verify-password: false
+enable-totp: true
+verify-totp: false
+
+# Let an admitted, authenticated player use Selene commands normally reserved for console.
+elevate-selene-commands: true

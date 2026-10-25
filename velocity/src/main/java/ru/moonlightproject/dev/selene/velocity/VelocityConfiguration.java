@@ -11,7 +11,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.util.*;
 
-record VelocityConfiguration(VelocityConfig config, LanguageCatalog languages, boolean banner) {
+record VelocityConfiguration(VelocityConfig config, LanguageCatalog languages, MaintenancePolicy maintenance, boolean banner) {
     static VelocityConfiguration load(Path directory) throws IOException {
         Files.createDirectories(directory);
         Path legacy=directory.resolve("velocity.properties");
@@ -34,7 +34,8 @@ record VelocityConfiguration(VelocityConfig config, LanguageCatalog languages, b
             }
         }
         Map<String,String> merged=new LinkedHashMap<>();
-        for(String file:List.of("connection.yml","attack.yml","premium.yml","config.yml")) {
+        Map<String,String> maintenanceValues=null;
+        for(String file:List.of("connection.yml","attack.yml","premium.yml","maintenance.yml","config.yml")) {
             String source=resource("defaults/"+file);
             Map<String,String> defaults=yaml(source,file);
             Path path=directory.resolve(file);
@@ -61,7 +62,9 @@ record VelocityConfiguration(VelocityConfig config, LanguageCatalog languages, b
                 ConfigFiles.writeAtomic(path,updated);
                 actual=yaml(updated,file);
             }
-            merged.putAll(defaults);merged.putAll(actual);
+            if(file.equals("maintenance.yml")) {
+                maintenanceValues=new LinkedHashMap<>(defaults);maintenanceValues.putAll(actual);
+            } else { merged.putAll(defaults);merged.putAll(actual); }
         }
         String language=merged.remove("language-default");
         boolean detect=bool(merged.remove("language-auto-detect"),"language-auto-detect");
@@ -69,7 +72,8 @@ record VelocityConfiguration(VelocityConfig config, LanguageCatalog languages, b
         LanguageCatalog catalog=LanguageCatalog.load(directory.resolve("languages"),language,detect,builtIn);
         Properties values=new Properties();values.putAll(merged);
         catalog.templates(language).forEach((key,value)->values.setProperty("message."+key,value));
-        return new VelocityConfiguration(VelocityConfig.parse(values,directory.toAbsolutePath()),catalog,banner);
+        return new VelocityConfiguration(VelocityConfig.parse(values,directory.toAbsolutePath()),catalog,
+            MaintenancePolicy.parse(java.util.Objects.requireNonNull(maintenanceValues)),banner);
     }
     private static String normalProfileCaptcha(String source,String value) {
         if(!Set.of("true","false").contains(value.toLowerCase(Locale.ROOT)))

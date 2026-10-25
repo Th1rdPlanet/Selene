@@ -47,6 +47,8 @@ import ru.moonlightproject.dev.selene.core.BackendGateway;
 import ru.moonlightproject.dev.selene.core.ForkCapabilities;
 import ru.moonlightproject.dev.selene.core.RelayServer;
 import ru.moonlightproject.dev.selene.core.TlsContexts;
+import ru.moonlightproject.dev.selene.api.MaintenanceState;
+import ru.moonlightproject.dev.selene.api.SeleneApi;
 
 @Plugin(
     id = "selene",
@@ -56,7 +58,7 @@ import ru.moonlightproject.dev.selene.core.TlsContexts;
     url = "https://dev.moonlightproject.ru",
     authors = {"~VicTim~"}
 )
-public final class SeleneVelocityPlugin {
+public final class SeleneVelocityPlugin implements SeleneApi {
     private static final MinecraftChannelIdentifier SESSION_CHANNEL =
         MinecraftChannelIdentifier.create("selene", "session");
     private static final MinecraftChannelIdentifier MANAGEMENT_CHANNEL =
@@ -64,6 +66,7 @@ public final class SeleneVelocityPlugin {
     private final ProxyServer proxy;
     private final Logger logger;
     private final Path dataDirectory;
+    private final MaintenanceController maintenance;
     private final Set<UUID> authenticated = ConcurrentHashMap.newKeySet();
     private final Set<UUID> onlineProofConnections = ConcurrentHashMap.newKeySet();
     private final Set<String> trustedPremiumAdmissions = ConcurrentHashMap.newKeySet();
@@ -79,6 +82,15 @@ public final class SeleneVelocityPlugin {
         this.proxy = proxy;
         this.logger = logger;
         this.dataDirectory = dataDirectory;
+        this.maintenance = new MaintenanceController(System::currentTimeMillis, state ->
+            logger.warn("Selene maintenance changed: enabled={} revision={} actor={} reason={}",
+                state.enabled(), state.revision(), state.actor(), state.reason()));
+    }
+
+    @Override public MaintenanceState maintenance() { return maintenance.maintenance(); }
+    @Override public java.util.concurrent.CompletionStage<MaintenanceState> setMaintenance(
+        boolean enabled, String reason, String actor) {
+        return maintenance.setMaintenance(enabled, reason, actor);
     }
 
     @Subscribe
