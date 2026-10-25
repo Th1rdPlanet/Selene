@@ -80,7 +80,7 @@
   "messages.INVALID_REQUEST": "<red>Введённые данные некорректны. Проверьте их и повторите.</red>",
   "messages.EXPIRED": "<red>Сессия авторизации истекла. Подключитесь ещё раз.</red>",
   "messages.UNAVAILABLE": "<red>Сервис авторизации временно недоступен. Повторите чуть позже.</red>",
-  "messages.admin-console-only": "<red>Управление аккаунтами доступно только из консоли.</red>",
+  "messages.admin-console-only": "<red>Недостаточно прав, или вы ещё не завершили вход.</red>",
   "messages.admin-use-velocity": "<yellow>В режиме PROXY_AUTH выполните эту команду в консоли Velocity.</yellow>",
   "messages.admin-help": "<gray>Команды:</gray> <white>selene account list [page]</white><newline><white>selene account info <name></white><newline><white>selene account delete <name></white><newline><white>selene account reset-password <name></white><newline><white>selene account reset-totp <name></white>",
   "messages.admin-invalid-username": "<red>Ник должен содержать 3–16 латинских букв, цифр или _.</red>",
@@ -141,5 +141,7 @@
   "interactive-captcha.instructions.item-frame": "<aqua>Подойдите к рамке и заберите из неё изумруд.</aqua>",
   "interactive-captcha.title": "<gradient:#8b5cf6:#38bdf8><bold>ПРОВЕРКА</bold></gradient>",
   "interactive-captcha.scoreboard-title": "<aqua><bold>ЗАДАНИЕ</bold></aqua>",
-  "interactive-captcha.time": "<dark_gray>•</dark_gray> <white><seconds> сек.</white>"
+  "interactive-captcha.time": "<dark_gray>•</dark_gray> <white><seconds> сек.</white>",
+  "messages.reload-started": "<yellow>Конфигурация проверена. Перезапускаю Selene… Игроки на этом сервере будут отключены.</yellow>",
+  "messages.reload-invalid": "<red>Перезагрузка отменена, конфигурация с ошибкой: <reason></red>"
 }

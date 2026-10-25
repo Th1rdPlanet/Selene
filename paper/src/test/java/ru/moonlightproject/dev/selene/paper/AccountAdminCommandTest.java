@@ -6,10 +6,17 @@ import ru.moonlightproject.dev.selene.core.AdminCommandParser;
 import static org.junit.jupiter.api.Assertions.*;
 
 class AccountAdminCommandTest {
- @Test void playersAreDeniedAndProxyPaperGivesVelocityGuidance(){
-  assertEquals(AdminCommandParser.Access.PLAYER_DENIED,AdminCommandParser.access(false,true));
-  assertEquals(AdminCommandParser.Access.PROXY_GUIDANCE,AdminCommandParser.access(true,false));
-  assertEquals(AdminCommandParser.Access.ALLOWED,AdminCommandParser.access(true,true));
+ @Test void onlyPermittedPlayersPassAndProxyPaperGivesVelocityGuidance(){
+  assertEquals(AdminCommandParser.Access.PLAYER_DENIED,AdminCommandParser.access(false,false,true));
+  assertEquals(AdminCommandParser.Access.ALLOWED,AdminCommandParser.access(false,true,true));
+  assertEquals(AdminCommandParser.Access.PROXY_GUIDANCE,AdminCommandParser.access(true,false,false));
+  assertEquals(AdminCommandParser.Access.PROXY_GUIDANCE,AdminCommandParser.access(false,true,false));
+  assertEquals(AdminCommandParser.Access.ALLOWED,AdminCommandParser.access(true,false,true));
+ }
+ @Test void readingAndChangingAccountsNeedSeparatePermissions(){
+  assertEquals("selene.command.account.view",AdminCommandParser.permission("list"));
+  assertEquals("selene.command.account.view",AdminCommandParser.permission("info"));
+  for(String op:new String[]{"delete","resetPassword","resetTotp"})assertEquals("selene.command.account.manage",AdminCommandParser.permission(op));
  }
  @Test void validatesSyntaxPagesAndUsernames(){
   assertEquals("list",AdminCommandParser.parse(new String[]{"account","list","2"}).request().op());

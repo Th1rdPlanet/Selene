@@ -1,5 +1,4 @@
 {
-  "admin-console-only": "<red>Account management is only available in the console.</red>",
   "admin-help": "<gray>Commands:</gray> <white>selene account list [page]</white><newline><white>selene account info &lt;name&gt;</white><newline><white>selene account delete &lt;name&gt;</white><newline><white>selene account reset-password &lt;name&gt;</white><newline><white>selene account reset-totp &lt;name&gt;</white>",
   "admin-invalid-username": "<red>Use 3–16 ASCII letters, numbers or underscores for the username.</red>",
   "admin-list-header": "<aqua><bold>Selene Accounts</bold></aqua> <gray>• page <page></gray>",
@@ -33,5 +32,22 @@
   "two-factor-help": "<gradient:#8b5cf6:#38bdf8><bold>Two-factor security</bold></gradient><newline><gray>/2fa enable</gray> <white>— enable</white><newline><gray>/2fa status</gray> <white>— show status</white><newline><gray>/2fa disable</gray> <white>— disable</white><newline><gray>/2fa recovery</gray> <white>— renew recovery codes</white>",
   "two-factor-auth-required": "<yellow>Sign in to your Selene account first.</yellow>",
   "two-factor-busy": "<yellow>A 2FA operation is already running or the service is busy.</yellow>",
-  "two-factor-unavailable": "<red>Could not open the secure 2FA setup screen.</red>"
+  "two-factor-unavailable": "<red>Could not open the secure 2FA setup screen.</red>",
+  "auth-already-done": "<yellow>You are already signed in; there is no need to return to the authentication server.</yellow>",
+  "command-login-first": "<yellow>Finish signing in to Selene first, then repeat the command.</yellow>",
+  "command-no-permission": "<red>You do not have permission for this Selene command.</red>",
+  "command-usage-session": "<gray>Usage:</gray> <white>/selene session <name></white>",
+  "command-usage-logout": "<gray>Usage:</gray> <white>/selene logout <name></white>",
+  "command-help-header": "<gradient:#8b5cf6:#38bdf8><bold>Selene</bold></gradient> <gray>• available commands</gray>",
+  "command-help-account-view": "<white>/selene account list [page]</white> <dark_gray>|</dark_gray> <white>account info <name></white> <gray>— accounts</gray>",
+  "command-help-account-manage": "<white>/selene account delete | reset-password | reset-totp <name></white> <gray>— change an account</gray>",
+  "command-help-attack": "<white>/selene attack status | confirm</white> <gray>— attack protection level</gray>",
+  "command-help-status": "<white>/selene status</white> <gray>— backend, protection and session state</gray>",
+  "command-help-session": "<white>/selene session <name></white> <gray>— a player's sign-in state</gray>",
+  "command-help-logout": "<white>/selene logout <name></white> <gray>— disconnect and require a new sign-in</gray>",
+  "command-status": "<gradient:#8b5cf6:#38bdf8><bold>Selene <version></bold></gradient><newline><gray>Backend:</gray> <white><backend></white><newline><gray>Protection:</gray> <white><level></white> <gray>(awaiting confirmation: <pending-confirm>)</gray><newline><gray>Online:</gray> <white><online></white> <gray>• on auth:</gray> <white><on-auth></white><newline><gray>Sessions:</gray> <green><authenticated> signed in</green> <gray>•</gray> <yellow><pending> in progress</yellow><newline><gray>OpenTelemetry:</gray> <white><otel></white>",
+  "command-player-offline": "<yellow>Player <player> is offline.</yellow>",
+  "command-session": "<gradient:#8b5cf6:#38bdf8><player></gradient> <gray>signedIn=</gray><white><authenticated></white> <gray>server=</gray><white><server></white> <gray>IP=</gray><white><ip></white><newline><gray>premium=</gray><white><premium></white> <gray>captcha=</gray><white><captcha></white> <gray>2FA management=</gray><white><management></white> <gray>ping=</gray><white><ping> ms</white>",
+  "command-logout-kick": "<yellow>An administrator ended your session. Please sign in again.</yellow>",
+  "command-logout-done": "<green>Session of <player> ended: the next join requires authentication.</green>"
 }

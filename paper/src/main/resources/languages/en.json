@@ -27,7 +27,7 @@
   "messages.INVALID_REQUEST": "<red>Invalid input. Check your information and try again.</red>",
   "messages.EXPIRED": "<red>Your authentication session expired. Please reconnect.</red>",
   "messages.UNAVAILABLE": "<red>Authentication is temporarily unavailable. Please try again later.</red>",
-  "messages.admin-console-only": "<red>Account management is only available in the console.</red>",
+  "messages.admin-console-only": "<red>Missing permission, or you have not finished signing in yet.</red>",
   "messages.admin-use-velocity": "<yellow>In PROXY_AUTH mode, run this command in the Velocity console.</yellow>",
   "messages.admin-help": "<gray>Commands:</gray> <white>selene account list [page]</white><newline><white>selene account info &lt;name&gt;</white><newline><white>selene account delete &lt;name&gt;</white><newline><white>selene account reset-password &lt;name&gt;</white><newline><white>selene account reset-totp &lt;name&gt;</white>",
   "messages.admin-invalid-username": "<red>Use 3–16 ASCII letters, numbers or underscores for the username.</red>",
@@ -141,5 +141,7 @@
   "interactive-captcha.instructions.item-frame": "<aqua>Walk to the item frame and take the emerald out of it.</aqua>",
   "interactive-captcha.title": "<gradient:#8b5cf6:#38bdf8><bold>VERIFICATION</bold></gradient>",
   "interactive-captcha.scoreboard-title": "<aqua><bold>TASK</bold></aqua>",
-  "interactive-captcha.time": "<dark_gray>•</dark_gray> <white><seconds>s</white>"
+  "interactive-captcha.time": "<dark_gray>•</dark_gray> <white><seconds>s</white>",
+  "messages.reload-started": "<yellow>Configuration checked. Restarting Selene… Players on this server will be disconnected.</yellow>",
+  "messages.reload-invalid": "<red>Reload cancelled, the configuration has an error: <reason></red>"
 }

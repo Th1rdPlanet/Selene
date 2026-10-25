@@ -12,4 +12,14 @@ commands:
   register:
     aliases: [reg]
   selene:
-    description: Selene console administration
+    description: Selene administration (console, or signed-in players with selene.command.* permissions)
+permissions:
+  selene.command.reload:
+    description: Reload Selene configuration on this Paper server
+    default: op
+  selene.command.account.view:
+    description: List and inspect Selene accounts
+    default: op
+  selene.command.account.manage:
+    description: Delete accounts and reset passwords or TOTP
+    default: op

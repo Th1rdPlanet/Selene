@@ -45,6 +45,10 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
  }
  @Override public void onEnable(){
   try {
+   // Bukkit may enable the same plugin instance again after /selene reload. Do not let
+   // optional services from the previous configuration survive that lifecycle.
+   gateway=null;adminGateway=null;inventoryProtection=null;resourcePackDelivery=null;interactiveCaptcha=null;
+   presentationTask=-1;standalone=false;captcha=false;dialogCapable=false;packetEventsEnabled=false;
    settings=PaperConfiguration.load(getDataFolder().toPath(),this::getResource);
    PaperConfigValidator.validate(settings.getValues(true));
    Map<String,String> builtIn;
@@ -91,12 +95,38 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
     getServer().getMessenger().registerOutgoingPluginChannel(this,MANAGEMENT_CHANNEL);
    }
    for(String command:List.of("login","register")){getCommand(command).setExecutor(this);getCommand(command).setTabCompleter((s,c,a,args)->List.of());}
-   getCommand("selene").setExecutor(new AccountAdminCommand(this,standalone,adminGateway,messages));getCommand("selene").setTabCompleter((s,c,a,args)->List.of());
+   getCommand("selene").setExecutor(new AccountAdminCommand(this,standalone,adminGateway,messages,p->!locked(p),this::reload));
+   getCommand("selene").setTabCompleter((s,c,a,args)->args.length==1?java.util.stream.Stream.of("reload","account").filter(x->x.startsWith(args[0].toLowerCase(Locale.ROOT))).toList():args.length==2&&args[0].equalsIgnoreCase("account")?java.util.stream.Stream.of("list","info","delete","reset-password","reset-totp").filter(x->x.startsWith(args[1].toLowerCase(Locale.ROOT))).toList():List.of());
    presentationTask=Bukkit.getScheduler().scheduleSyncRepeatingTask(this,()->{long now=System.currentTimeMillis();for(Session session:sessions.values())if(current(session)&&session.auth.view().stage()!=AuthStage.AUTHENTICATED){presentation.render(session.player,session.snapshot,session.auth.view(),now);if(interactiveCaptcha!=null&&interactiveCaptcha.active(session.player))interactiveCaptcha.render(session.player,Countdown.secondsRemaining(now,session.auth.view().deadlineMillis()));}},20,20);
    getLogger().info(messages.plain("console.ready",AuthMessages.literal("role",role),AuthMessages.literal("stage",stage),AuthMessages.literal("world",settings.getString("limbo.world")),AuthMessages.literal("dialogs",Boolean.toString(dialogCapable))));
    // Reload is unsupported: no existing connection may inherit authentication.
    for(Player p:Bukkit.getOnlinePlayers())p.kick(msg(p,"unavailable"));
   }catch(Exception | LinkageError e){String reason=e.getMessage()==null?e.getClass().getSimpleName():e.getMessage();getLogger().severe("Startup failed: "+reason+". Check plugins/Selene configuration; the server will stop.");getLogger().log(Level.FINE,"Selene startup failure details",e);Bukkit.shutdown();}
+ }
+ /**
+  * Re-reads every Selene file by restarting the plugin. The new configuration is checked first,
+  * because a failed start deliberately stops the server rather than run without authentication.
+  * Players still on this server are disconnected: no connection may inherit an authentication.
+  */
+ private void reload(CommandSender sender){
+  try{
+   var probe=PaperConfiguration.load(getDataFolder().toPath(),this::getResource);
+   PaperConfigValidator.validate(probe.getValues(true));
+   String view=probe.getString("captcha-view","").toUpperCase(Locale.ROOT);
+   if(!Set.of("MAP","DIALOG_FONT","INTERACTIVE").contains(view))throw new IllegalArgumentException("captcha-view must be MAP, DIALOG_FONT or INTERACTIVE");
+   String pack=probe.getString("resource-pack-provider","NONE");
+   if(view.equals("DIALOG_FONT")&&pack.equals("NONE"))throw new IllegalArgumentException("captcha-view DIALOG_FONT requires resource-pack-provider ItemsAdder or Oraxen");
+   if(!pack.equals("NONE")&&!getServer().getPluginManager().isPluginEnabled(pack))throw new IllegalArgumentException("Configured external pack manager '"+pack+"' is unavailable");
+   if(view.equals("INTERACTIVE"))InteractiveCaptchaConfig.parse(probe.getConfigurationSection("interactive-captcha"));
+  }catch(Exception error){
+   String reason=error.getMessage()==null?error.getClass().getSimpleName():error.getMessage();
+   sender.sendMessage(messages.component("messages.reload-invalid",AuthMessages.literal("reason",reason)));
+   getLogger().warning("Reload rejected: "+reason);
+   return;
+  }
+  sender.sendMessage(messages.component("messages.reload-started"));
+  getLogger().info("Reload requested by "+sender.getName());
+  Bukkit.getScheduler().runTask(this,()->{var plugins=getServer().getPluginManager();plugins.disablePlugin(this);plugins.enablePlugin(this);});
  }
  private javax.net.ssl.SSLContext tlsContext(String file,Properties props)throws Exception{
   Path key=new File(getDataFolder(),required(props,"key-store")).toPath();Path trust=new File(getDataFolder(),required(props,"trust-store")).toPath();

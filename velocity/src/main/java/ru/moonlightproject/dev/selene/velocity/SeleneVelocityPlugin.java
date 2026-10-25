@@ -139,7 +139,10 @@ public final class SeleneVelocityPlugin {
                         () -> logger.warn(messages.plain("protection-pending"))));
                 proxy.getChannelRegistrar().register(SESSION_CHANNEL);
                 proxy.getChannelRegistrar().register(MANAGEMENT_CHANNEL);
-                proxy.getCommandManager().register(proxy.getCommandManager().metaBuilder("selene").plugin(this).build(),new AccountAdminCommand(backend,messages,logger, this::protectionCommand));
+                proxy.getCommandManager().register(proxy.getCommandManager().metaBuilder("selene").plugin(this).build(),
+                    new SeleneCommand(backend,()->runtime==null?messages:runtime.messages(),logger,new CommandOperations(),this::isAuthenticated,
+                        ()->proxy.getAllPlayers().stream().map(Player::getUsername),
+                        player->config.commandAdmins().contains(player.getUsername().toLowerCase(Locale.ROOT))));
                 String[] twoFactorAliases = java.util.Arrays.stream(config.twoFactorCommandAliases().split(","))
                     .map(String::trim).filter(alias -> alias.matches("[a-zA-Z0-9_-]{1,24}"))
                     .distinct().toArray(String[]::new);
@@ -267,9 +270,10 @@ public final class SeleneVelocityPlugin {
             return;
         }
         boolean loggedIn = isAuthenticated(event.getPlayer());
+        boolean managing = state.identities().get(event.getPlayer()).flatMap(state.twoFactorRoutes()::get).isPresent();
         String target = event.getOriginalServer().getServerInfo().getName();
-        if (!AuthenticationRoute.mayConnect(loggedIn,target,state.config().authServer())) {
-            event.getPlayer().sendMessage(text(event.getPlayer(),"auth-required"));
+        if (!AuthenticationRoute.mayConnect(loggedIn,managing,target,state.config().authServer())) {
+            event.getPlayer().sendMessage(text(event.getPlayer(),loggedIn?"auth-already-done":"auth-required"));
             event.setResult(ServerPreConnectEvent.ServerResult.denied());
         }
     }
@@ -617,6 +621,69 @@ public final class SeleneVelocityPlugin {
             } else reply=state.messages().component("protection-help");
             invocation.source().sendMessage(reply);
         }
+    }
+
+    /** Proxy-side state for {@code /selene status}, {@code session} and {@code logout}. */
+    private final class CommandOperations implements SeleneCommand.Operations {
+        @Override public void status(com.velocitypowered.api.command.CommandSource source) {
+            RuntimeState state = runtime;
+            if (state == null) { source.sendMessage(Component.text("Selene ещё не готова.")); return; }
+            AttackLevel level = currentLevel(state, System.currentTimeMillis());
+            String authServer = state.config().authServer();
+            long onAuth = proxy.getAllPlayers().stream().filter(p -> p.getCurrentServer()
+                .filter(s -> s.getServerInfo().getName().equals(authServer)).isPresent()).count();
+            int loggedIn = authenticated.size(), pending = Math.max(0, state.sessions().size() - loggedIn);
+            long started = System.nanoTime();
+            // A one-row account page is the cheapest backend round trip that also touches the database.
+            if (!(state.backend() instanceof ru.moonlightproject.dev.selene.core.AccountAdminGateway admin)) return;
+            admin.admin(new ru.moonlightproject.dev.selene.core.AdminRequest("list", "", 1, 1))
+                .whenComplete((reply, error) -> {
+                    boolean up = error == null && reply != null && reply.status().equals("OK");
+                    long millis = java.time.Duration.ofNanos(System.nanoTime() - started).toMillis();
+                    source.sendMessage(state.messages().component("command-status",
+                        VelocityMessages.literal("version", "0.1.0-dev"),
+                        VelocityMessages.literal("level", level.name()),
+                        VelocityMessages.literal("pending-confirm", Boolean.toString(state.protection().pending())),
+                        VelocityMessages.literal("backend", up ? "OK • " + millis + " ms" : "недоступен / unavailable"),
+                        VelocityMessages.literal("online", Integer.toString(proxy.getPlayerCount())),
+                        VelocityMessages.literal("on-auth", Long.toString(onAuth)),
+                        VelocityMessages.literal("authenticated", Integer.toString(loggedIn)),
+                        VelocityMessages.literal("pending", Integer.toString(pending)),
+                        VelocityMessages.literal("otel", Boolean.toString(tracing != null))));
+                });
+        }
+        @Override public void session(com.velocitypowered.api.command.CommandSource source, String username) {
+            RuntimeState state = runtime;
+            Optional<Player> player = proxy.getPlayer(username);
+            if (state == null || player.isEmpty()) { source.sendMessage(state == null ? Component.text("Selene ещё не готова.")
+                : state.messages().component("command-player-offline", VelocityMessages.player(username))); return; }
+            Optional<UUID> connection = state.identities().get(player.get());
+            Optional<ConnectionSessions.Session> session = connection.flatMap(state.sessions()::get);
+            source.sendMessage(state.messages().component("command-session",
+                VelocityMessages.player(player.get().getUsername()),
+                VelocityMessages.literal("authenticated", Boolean.toString(isAuthenticated(player.get()))),
+                VelocityMessages.literal("server", player.get().getCurrentServer().map(s -> s.getServerInfo().getName()).orElse("—")),
+                VelocityMessages.literal("ip", player.get().getRemoteAddress().getAddress().getHostAddress()),
+                VelocityMessages.literal("premium", session.map(s -> Boolean.toString(s.premium())).orElse("—")),
+                VelocityMessages.literal("captcha", session.map(s -> Boolean.toString(s.captchaRequired())).orElse("—")),
+                VelocityMessages.literal("management", Boolean.toString(connection.flatMap(state.twoFactorRoutes()::get).isPresent())),
+                VelocityMessages.literal("ping", Long.toString(player.get().getPing()))));
+        }
+        @Override public void logout(com.velocitypowered.api.command.CommandSource source, String username) {
+            RuntimeState state = runtime;
+            Optional<Player> player = proxy.getPlayer(username);
+            if (state == null || player.isEmpty()) { source.sendMessage(state == null ? Component.text("Selene ещё не готова.")
+                : state.messages().component("command-player-offline", VelocityMessages.player(username))); return; }
+            Player target = player.get();
+            // Forget the login before disconnecting, so the disconnect handler does not grant IP trust.
+            state.identities().get(target).ifPresent(authenticated::remove);
+            state.authenticationGrace().invalidate(target.getUsername(), target.getRemoteAddress().getAddress());
+            target.disconnect(text(target, "command-logout-kick"));
+            logger.info("Selene logout of {} by {}", target.getUsername(),
+                source instanceof Player actor ? actor.getUsername() : "console");
+            source.sendMessage(state.messages().component("command-logout-done", VelocityMessages.player(target.getUsername())));
+        }
+        @Override public void protection(com.velocitypowered.api.command.SimpleCommand.Invocation invocation) { protectionCommand(invocation); }
     }
 
     private record RuntimeState(

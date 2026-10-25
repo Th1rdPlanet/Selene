@@ -63,6 +63,7 @@ record VelocityConfig(
     boolean otelEnabled,
     String otlpEndpoint,
     String otelServiceName,
+    Set<String> commandAdmins,
     Map<String, String> messages
 ) {
     private static final Set<String> KEYS = Set.of(
@@ -87,7 +88,7 @@ record VelocityConfig(
         "premium-lookup-concurrency", "premium-trust-enabled", "premium-trust-ttl-days",
         "premium-trust-capacity", "premium-trust-snapshot-max-age-seconds",
         "two-factor-management-timeout-seconds", "two-factor-command-aliases",
-        "telemetry-otel-enabled", "telemetry-otlp-endpoint", "telemetry-service-name");
+        "telemetry-otel-enabled", "telemetry-otlp-endpoint", "telemetry-service-name", "command-admins");
 
     static VelocityConfig load(Path file) throws IOException {
         Properties properties = new Properties();
@@ -163,7 +164,19 @@ record VelocityConfig(
             bool(properties, "telemetry-otel-enabled", false),
             otlpEndpoint(properties.getProperty("telemetry-otlp-endpoint", "http://127.0.0.1:4318/v1/traces").trim()),
             nonBlank(properties.getProperty("telemetry-service-name", "selene-velocity"), "telemetry-service-name"),
+            names(properties.getProperty("command-admins", "")),
             messages);
+    }
+
+    private static Set<String> names(String value) {
+        Set<String> names = new java.util.HashSet<>();
+        for (String name : value.split(",")) {
+            String trimmed = name.trim();
+            if (trimmed.isEmpty()) continue;
+            if (!trimmed.matches("[A-Za-z0-9_]{3,16}")) throw new IllegalArgumentException("command-admins contains an invalid nickname: " + trimmed);
+            names.add(trimmed.toLowerCase(java.util.Locale.ROOT));
+        }
+        return Set.copyOf(names);
     }
 
     private static String otlpEndpoint(String value) {

@@ -53,6 +53,17 @@ class VelocityConfigTest {
         assertThrows(IllegalArgumentException.class,()->VelocityConfig.load(file));
     }
 
+    @Test
+    void normalizesCommandAdministratorsAndRejectsInvalidNames() throws Exception {
+        var file=Files.createTempFile("selene-velocity",".properties");
+        Files.writeString(file,valid()+"command-admins= Alice,BOB_2, alice\n");
+        assertEquals(java.util.Set.of("alice","bob_2"),VelocityConfig.load(file).commandAdmins());
+
+        Files.writeString(file,valid()+"command-admins=valid,bad name\n");
+        assertTrue(assertThrows(IllegalArgumentException.class,()->VelocityConfig.load(file))
+            .getMessage().contains("command-admins"));
+    }
+
     private static String valid() {
         return """
             backend-endpoint=tcp://127.0.0.1:38191
