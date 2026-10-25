@@ -1,0 +1,21 @@
+server:
+  http_listen_address: 127.0.0.1
+  http_listen_port: 3200
+  grpc_listen_address: 127.0.0.1
+  grpc_listen_port: 9096
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        http:
+          # backend/config.toml: [telemetry] otel = true, otlp_endpoint = "http://127.0.0.1:4318/v1/traces"
+          endpoint: 127.0.0.1:4318
+
+storage:
+  trace:
+    backend: local
+    wal:
+      path: /var/tempo/wal
+    local:
+      path: /var/tempo/blocks
