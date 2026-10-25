@@ -74,6 +74,7 @@ public final class SeleneVelocityPlugin implements SeleneApi {
     private final Set<UUID> authenticated = ConcurrentHashMap.newKeySet();
     private final Set<UUID> onlineProofConnections = ConcurrentHashMap.newKeySet();
     private final Set<String> trustedPremiumAdmissions = ConcurrentHashMap.newKeySet();
+    private final Map<String, Long> maintenanceAdmissions = new ConcurrentHashMap<>();
     private final Set<UUID> acknowledgedSessionTokens = ConcurrentHashMap.newKeySet();
     private final Map<String, String> lastServers = new ConcurrentHashMap<>();
     private volatile Set<String> premiumNames = Set.of();
@@ -217,6 +218,7 @@ public final class SeleneVelocityPlugin implements SeleneApi {
                     event.setResult(PreLoginEvent.PreLoginComponentResult.denied(
                         Component.text("Server is in maintenance mode")));
                 } else {
+                    maintenanceAdmissions.put(premiumAdmissionKey(username, ip), maintenanceState.revision());
                     event.setResult(premium
                         ? PreLoginEvent.PreLoginComponentResult.forceOnlineMode()
                         : PreLoginEvent.PreLoginComponentResult.forceOfflineMode());
@@ -279,17 +281,28 @@ public final class SeleneVelocityPlugin implements SeleneApi {
         boolean premium = player.isOnlineMode() || trustedPremium;
         AuthenticationGraceCache.Decision grace=state.authenticationGrace().decision(
             player.getUsername(),player.getRemoteAddress().getAddress(),profile);
-        boolean captcha = profile.captcha(premium, suspicious) && !grace.captcha();
+        MaintenanceState activeMaintenance = maintenance.maintenance();
+        boolean maintenanceSession = activeMaintenance.enabled();
+        Long admittedRevision = maintenanceAdmissions.remove(premiumAdmissionKey(player.getUsername(), ip));
+        if (maintenanceSession && (admittedRevision == null || admittedRevision != activeMaintenance.revision())) {
+            player.disconnect(Component.text("Server is in maintenance mode"));
+            return;
+        }
+        boolean captcha = maintenanceSession
+            ? state.maintenancePolicy().enableCaptcha()
+            : profile.captcha(premium, suspicious) && !grace.captcha();
         ConnectionSessions.Session session;
         try {
             UUID connectionId = state.identities().open(player);
-            MaintenanceState maintenanceState = maintenance.maintenance();
+            MaintenanceState maintenanceState = activeMaintenance;
             MaintenanceMessage.Policy sessionPolicy = maintenanceState.enabled()
                 ? wirePolicy(state.maintenancePolicy())
                 : new MaintenanceMessage.Policy(false,false,true,true,true,true,true,true,false);
             ConnectionSessions.Opened opened = state.sessions().open(
                 connectionId, player.getUsername(), player.getRemoteAddress().getAddress(),
-                premium, captcha, !premium && grace.password(), grace.totp(),
+                premium, captcha,
+                !maintenanceSession && !premium && grace.password(),
+                !maintenanceSession && grace.totp(),
                 maintenanceState.enabled() ? maintenanceState.revision() : 0, sessionPolicy);
             session = opened.session();
             if (player.isOnlineMode()) onlineProofConnections.add(connectionId);
@@ -674,7 +687,10 @@ public final class SeleneVelocityPlugin implements SeleneApi {
         return new AuthRequest(
             operation, session.id().toString(), session.username(), session.address().getHostAddress(),
             password, answer, session.premium(), session.captchaRequired(), "", "",
-            session.passwordTrusted(), session.totpTrusted());
+            session.passwordTrusted(), session.totpTrusted(), "", "", session.maintenanceRevision(),
+            session.maintenancePolicy().enableCaptcha(), session.maintenancePolicy().verifyCaptcha(),
+            session.maintenancePolicy().enablePassword(), session.maintenancePolicy().verifyPassword(),
+            session.maintenancePolicy().enableTotp(), session.maintenancePolicy().verifyTotp());
     }
 
     private ForkCapabilities findForkCapabilities() {

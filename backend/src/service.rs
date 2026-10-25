@@ -102,6 +102,13 @@ pub(crate) struct Session {
     premium: bool,
     password_trusted: bool,
     totp_trusted: bool,
+    maintenance_revision: u64,
+    maintenance_enable_captcha: bool,
+    maintenance_verify_captcha: bool,
+    maintenance_enable_password: bool,
+    maintenance_verify_password: bool,
+    maintenance_enable_totp: bool,
+    maintenance_verify_totp: bool,
     pub(crate) expires: Instant,
     challenge_expires: Instant,
     pub(crate) challenge: Option<Challenge>,
@@ -293,7 +300,19 @@ impl Service {
             if sessions.len() >= self.policy.session_capacity {
                 return Reply::status("BUSY", &id);
             }
-            let interactive = r.captcha_required && r.captcha_kind == "INTERACTIVE";
+            if r.maintenance_revision > 0
+                && (r.maintenance_verify_captcha && !r.maintenance_enable_captcha
+                    || r.maintenance_verify_password && !r.maintenance_enable_password
+                    || r.maintenance_verify_totp && !r.maintenance_enable_totp)
+            {
+                return Reply::status("INVALID_REQUEST", &id);
+            }
+            let captcha_enabled = if r.maintenance_revision > 0 {
+                r.maintenance_enable_captcha
+            } else {
+                r.captcha_required
+            };
+            let interactive = captcha_enabled && r.captcha_kind == "INTERACTIVE";
             let mut nonce_bytes = [0_u8; 32];
             if interactive {
                 RandomOsRng.fill_bytes(&mut nonce_bytes);
@@ -306,9 +325,16 @@ impl Service {
                     premium: r.premium,
                     password_trusted: r.password_trusted,
                     totp_trusted: r.totp_trusted,
+                    maintenance_revision: r.maintenance_revision,
+                    maintenance_enable_captcha: r.maintenance_enable_captcha,
+                    maintenance_verify_captcha: r.maintenance_verify_captcha,
+                    maintenance_enable_password: r.maintenance_enable_password,
+                    maintenance_verify_password: r.maintenance_verify_password,
+                    maintenance_enable_totp: r.maintenance_enable_totp,
+                    maintenance_verify_totp: r.maintenance_verify_totp,
                     expires: time + Duration::from_secs(self.policy.pending_seconds),
                     challenge_expires: time + Duration::from_secs(self.policy.captcha_seconds),
-                    challenge: if r.captcha_required && !interactive {
+                    challenge: if captcha_enabled && !interactive {
                         Some(crate::traces::span_sync(
                             "captcha.generate",
                             captcha::generate,
@@ -345,7 +371,7 @@ impl Service {
         let Some(s) = sessions.get_mut(&id) else {
             return Reply::status("EXPIRED", &id);
         };
-        if s.name != r.username || s.ip != r.ip {
+        if s.name != r.username || s.ip != r.ip || !maintenance_matches(s, &r) {
             return Reply::status("INVALID_REQUEST", &id);
         }
         if s.attempts >= self.policy.max_attempts {
@@ -459,7 +485,7 @@ impl Service {
             if r.op != "answer" {
                 return Reply::status("INVALID_REQUEST", &id);
             }
-            if r.answer != c.answer {
+            if (s.maintenance_revision == 0 || s.maintenance_verify_captcha) && r.answer != c.answer {
                 s.attempts += 1;
                 return Reply::status(
                     if s.attempts >= self.policy.max_attempts {
@@ -479,6 +505,9 @@ impl Service {
         if account.as_ref().is_some_and(|a| a.premium) && !s.premium {
             return Reply::status("INVALID_CREDENTIALS", &id);
         }
+        if s.maintenance_revision > 0 && account.is_none() {
+            return Reply::status("INVALID_CREDENTIALS", &id);
+        }
         if s.premium && account.as_ref().is_none_or(|a| a.premium) {
             if account.is_none() {
                 match self.storage.register(&s.name, "", true).await {
@@ -496,6 +525,9 @@ impl Service {
         {
             return self.finish_identity(s, &id, time).await;
         }
+        if s.maintenance_revision > 0 && !s.maintenance_enable_password {
+            return self.finish_identity(s, &id, time).await;
+        }
         if matches!(r.op.as_str(), "begin" | "answer") {
             return Reply::status(
                 if account
@@ -508,6 +540,12 @@ impl Service {
                 },
                 &id,
             );
+        }
+        if s.maintenance_revision > 0 && r.op == "register" {
+            return Reply::status("INVALID_REQUEST", &id);
+        }
+        if s.maintenance_revision > 0 && r.op == "login" && !s.maintenance_verify_password {
+            return self.finish_identity(s, &id, time).await;
         }
         if !(8..=256).contains(&r.password.len()) {
             return Reply::status("INVALID_REQUEST", &id);
@@ -608,6 +646,11 @@ impl Service {
         if self.totp.is_some() {
             match self.storage.totp_state(&s.name).await {
                 Ok(Some(_)) => {
+                    if s.maintenance_revision > 0 && !s.maintenance_enable_totp {
+                        let mut reply = authenticate(s, id, time, &self.policy);
+                        reply.totp_enabled = true;
+                        return reply;
+                    }
                     if s.totp_trusted {
                         let mut reply = authenticate(s, id, time, &self.policy);
                         reply.totp_enabled = true;
@@ -638,6 +681,12 @@ impl Service {
         };
         if !s.identity_verified {
             return Reply::status("INVALID_REQUEST", id);
+        }
+        if s.maintenance_revision > 0 && !s.maintenance_verify_totp {
+            s.second_factor_attempts = 0;
+            let mut reply = authenticate(s, id, time, &self.policy);
+            reply.totp_enabled = true;
+            return reply;
         }
         if s.second_factor_attempts >= runtime.policy.max_attempts {
             return Reply::status("RATE_LIMITED", id);
@@ -861,6 +910,16 @@ fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
         .zip(right)
         .fold(0_u8, |diff, (a, b)| diff | (a ^ b))
         == 0
+}
+
+fn maintenance_matches(session: &Session, request: &Request) -> bool {
+    session.maintenance_revision == request.maintenance_revision
+        && session.maintenance_enable_captcha == request.maintenance_enable_captcha
+        && session.maintenance_verify_captcha == request.maintenance_verify_captcha
+        && session.maintenance_enable_password == request.maintenance_enable_password
+        && session.maintenance_verify_password == request.maintenance_verify_password
+        && session.maintenance_enable_totp == request.maintenance_enable_totp
+        && session.maintenance_verify_totp == request.maintenance_verify_totp
 }
 
 fn authenticate(s: &mut Session, id: &str, time: Instant, policy: &Policy) -> Reply {

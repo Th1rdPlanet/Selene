@@ -73,5 +73,16 @@ class JsonCodecTest {
   assertThrows(IllegalArgumentException.class,()->JsonCodec.reply(bytes("{\"challengeNonce\":\""+"x".repeat(129)+"\"}")));
  }
 
+ @Test void maintenancePolicyRoundTripsAndRejectsInvalidCombinations(){
+  AuthRequest request=new AuthRequest("begin","session","VicTim","127.0.0.1","","",false,true,
+   "","",false,false,"","",12,true,false,true,false,true,false);
+  AuthRequest decoded=JsonCodec.request(JsonCodec.encode(request));
+  assertEquals(12,decoded.maintenanceRevision());
+  assertTrue(decoded.maintenanceEnablePassword());
+  assertFalse(decoded.maintenanceVerifyPassword());
+  assertThrows(IllegalArgumentException.class,()->new AuthRequest("begin","session","VicTim","127.0.0.1",
+   "","",false,true,"","",false,false,"","",12,false,true,true,false,true,false));
+ }
+
  private static byte[] bytes(String json){return json.getBytes(StandardCharsets.UTF_8);}
 }

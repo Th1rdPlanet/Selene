@@ -56,6 +56,83 @@ async fn trusted_password_skips_existing_login_but_not_registration() {
     unknown.password_trusted = true;
     assert_eq!(s.handle(unknown).await.status, "REGISTER");
 }
+
+#[tokio::test]
+async fn maintenance_can_show_factors_without_verifying_values() {
+    let s = service().await;
+    let mut registration = request("begin");
+    s.handle(registration.clone()).await;
+    registration.op = "register".into();
+    assert_eq!(s.handle(registration).await.status, "AUTHENTICATED");
+
+    let mut login = request("begin");
+    login.maintenance_revision = 7;
+    login.maintenance_enable_captcha = true;
+    login.maintenance_enable_password = true;
+    login.maintenance_enable_totp = true;
+    login.captcha_required = true;
+    assert_eq!(s.handle(login.clone()).await.status, "CAPTCHA");
+    login.op = "answer".into();
+    login.answer = "definitely wrong".into();
+    assert_eq!(s.handle(login.clone()).await.status, "LOGIN");
+    login.op = "login".into();
+    login.password = "anything".into();
+    assert_eq!(s.handle(login).await.status, "AUTHENTICATED");
+}
+
+#[tokio::test]
+async fn maintenance_disabled_factor_is_skipped_but_verified_factor_still_rejects() {
+    let s = service().await;
+    let mut registration = request("begin");
+    s.handle(registration.clone()).await;
+    registration.op = "register".into();
+    assert_eq!(s.handle(registration).await.status, "AUTHENTICATED");
+
+    let mut skipped = request("begin");
+    skipped.maintenance_revision = 8;
+    assert_eq!(s.handle(skipped).await.status, "AUTHENTICATED");
+
+    let mut verified = request("begin");
+    verified.maintenance_revision = 9;
+    verified.maintenance_enable_password = true;
+    verified.maintenance_verify_password = true;
+    assert_eq!(s.handle(verified.clone()).await.status, "LOGIN");
+    verified.op = "login".into();
+    verified.password = "wrong password".into();
+    assert_eq!(s.handle(verified).await.status, "INVALID_CREDENTIALS");
+}
+
+#[tokio::test]
+async fn maintenance_policy_cannot_change_after_begin() {
+    let s = service().await;
+    let mut registration = request("begin");
+    s.handle(registration.clone()).await;
+    registration.op = "register".into();
+    assert_eq!(s.handle(registration).await.status, "AUTHENTICATED");
+    let mut r = request("begin");
+    r.maintenance_revision = 11;
+    r.maintenance_enable_password = true;
+    assert_eq!(s.handle(r.clone()).await.status, "LOGIN");
+    r.maintenance_verify_password = true;
+    assert_eq!(s.handle(r).await.status, "INVALID_REQUEST");
+}
+
+#[tokio::test]
+async fn maintenance_totp_stage_can_be_enabled_without_verification() {
+    let s = totp_service().await;
+    enable_totp(&s, false).await;
+    let mut login = request("begin");
+    login.maintenance_revision = 12;
+    login.maintenance_enable_password = true;
+    login.maintenance_enable_totp = true;
+    assert_eq!(s.handle(login.clone()).await.status, "LOGIN");
+    login.op = "login".into();
+    login.password = "anything".into();
+    assert_eq!(s.handle(login.clone()).await.status, "TOTP_REQUIRED");
+    login.op = "totp_verify".into();
+    login.totp_code = "anything".into();
+    assert_eq!(s.handle(login).await.status, "AUTHENTICATED");
+}
 #[tokio::test]
 async fn captcha_cannot_be_bypassed_or_reset_by_begin() {
     let s = service().await;

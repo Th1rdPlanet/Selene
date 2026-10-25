@@ -94,7 +94,10 @@ final class ConnectionSessions {
             session.address().getHostAddress(), request.password(), request.answer(),
             session.premium(), session.captchaRequired(), request.totpCode(), request.recoveryCode(),
             session.passwordTrusted(), session.totpTrusted(), request.captchaKind(),
-            request.challengeNonce()));
+            request.challengeNonce(), session.maintenanceRevision(),
+            session.maintenancePolicy().enableCaptcha(), session.maintenancePolicy().verifyCaptcha(),
+            session.maintenancePolicy().enablePassword(), session.maintenancePolicy().verifyPassword(),
+            session.maintenancePolicy().enableTotp(), session.maintenancePolicy().verifyTotp()));
     }
 
     synchronized boolean observeReply(UUID connectionId, UUID sessionId, AuthReply reply) {

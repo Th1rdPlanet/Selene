@@ -44,6 +44,13 @@ pub struct Request {
     pub totp_trusted: bool,
     pub captcha_kind: String,
     pub challenge_nonce: String,
+    pub maintenance_revision: u64,
+    pub maintenance_enable_captcha: bool,
+    pub maintenance_verify_captcha: bool,
+    pub maintenance_enable_password: bool,
+    pub maintenance_verify_password: bool,
+    pub maintenance_enable_totp: bool,
+    pub maintenance_verify_totp: bool,
 }
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
