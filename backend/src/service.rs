@@ -4,10 +4,7 @@ use crate::{
     storage::Storage,
     totp::{SecretCipher, TotpEngine, generate_recovery_codes, recovery_hash},
 };
-use argon2::{
-    Argon2, PasswordHash, PasswordHasher, PasswordVerifier,
-    password_hash::{SaltString, rand_core::OsRng},
-};
+use argon2::{Algorithm, Argon2, Params, PasswordHasher, PasswordVerifier, Version};
 use base64::Engine;
 use data_encoding::BASE32_NOPAD;
 use rand::{RngCore, rngs::OsRng as RandomOsRng};
@@ -32,6 +29,9 @@ pub struct Policy {
     pub trust_qualify_seconds: u64,
     pub trust_ttl_seconds: u64,
     pub password_workers: usize,
+    /// Argon2id lanes computed in parallel. The memory and time cost stay the same, so an
+    /// attacker pays the same per guess while a login finishes on several cores.
+    pub password_lanes: u32,
     pub tombstone_capacity: usize,
 }
 #[derive(Clone, Deserialize)]
@@ -91,7 +91,9 @@ impl Default for Policy {
             max_attempts: 3,
             trust_qualify_seconds: 600,
             trust_ttl_seconds: 604800,
-            password_workers: 2,
+            // One Argon2 worker per core; lanes of concurrent hashes share the same cores.
+            password_workers: std::thread::available_parallelism().map_or(2, |n| n.get()),
+            password_lanes: 4,
             tombstone_capacity: 20000,
         }
     }
@@ -195,6 +197,7 @@ impl Service {
         anyhow::ensure!(
             policy.session_capacity > 0
                 && policy.password_workers > 0
+                && (1..=16).contains(&policy.password_lanes)
                 && policy.tombstone_capacity > 0
                 && policy.max_attempts > 0
                 && policy.pending_seconds > 0
@@ -565,8 +568,10 @@ impl Service {
             return Reply::status("BUSY", &id);
         };
         let hash = account.map(|a| a.hash);
+        let previous_hash = hash.clone();
         let registering = r.op == "register";
         let password = r.password;
+        let lanes = self.policy.password_lanes;
         let stage = if registering {
             "argon2.hash"
         } else {
@@ -576,21 +581,27 @@ impl Service {
             stage,
             tokio::task::spawn_blocking(move || {
                 let _permit = permit;
-                let argon = Argon2::default();
+                let argon = password_hasher(lanes);
                 if registering {
                     argon
-                        .hash_password(password.as_bytes(), &SaltString::generate(&mut OsRng))
-                        .map(|h| Some(h.to_string()))
+                        .hash_password(password.as_bytes())
+                        .map(|h| PasswordOutcome::Registered(h.to_string()))
                         .map_err(|_| ())
                 } else {
-                    let valid = hash
-                        .and_then(|h| {
-                            PasswordHash::new(&h).ok().map(|parsed| {
-                                argon.verify_password(password.as_bytes(), &parsed).is_ok()
-                            })
-                        })
-                        .unwrap_or(false);
-                    if valid { Ok(None) } else { Err(()) }
+                    // The stored hash carries its own parameters, so older hashes still verify.
+                    let Some(stored) = hash else { return Err(()) };
+                    if argon
+                        .verify_password(password.as_bytes(), stored.as_str())
+                        .is_err()
+                    {
+                        return Err(());
+                    }
+                    // Upgrade hashes made with other parameters while the password is at hand.
+                    let rehash = (!stored.starts_with(&password_hash_prefix(lanes)))
+                        .then(|| argon.hash_password(password.as_bytes()).ok())
+                        .flatten()
+                        .map(|h| h.to_string());
+                    Ok(PasswordOutcome::Verified { rehash })
                 }
             }),
         )
@@ -599,18 +610,33 @@ impl Service {
             return Reply::status("EXPIRED", &id);
         }
         match result {
-            Ok(Ok(hash)) => {
-                if let Some(hash) = hash {
-                    let stored = if reset_account {
-                        self.storage.register_reset(&s.name, &hash).await
-                    } else {
-                        self.storage.register(&s.name, &hash, false).await
-                    };
-                    match stored {
-                        Ok(true) => {}
-                        Ok(false) => return Reply::status("ACCOUNT_EXISTS", &id),
-                        Err(_) => return Reply::status("UNAVAILABLE", &id),
+            Ok(Ok(outcome)) => {
+                match outcome {
+                    PasswordOutcome::Registered(hash) => {
+                        let stored = if reset_account {
+                            self.storage.register_reset(&s.name, &hash).await
+                        } else {
+                            self.storage.register(&s.name, &hash, false).await
+                        };
+                        match stored {
+                            Ok(true) => {}
+                            Ok(false) => return Reply::status("ACCOUNT_EXISTS", &id),
+                            Err(_) => return Reply::status("UNAVAILABLE", &id),
+                        }
                     }
+                    PasswordOutcome::Verified {
+                        rehash: Some(new_hash),
+                    } => {
+                        // Best effort: the login already succeeded, and a failed upgrade is
+                        // retried on the next login.
+                        if let Some(old_hash) = previous_hash {
+                            let _ = self
+                                .storage
+                                .upgrade_password_hash(&s.name, &old_hash, &new_hash)
+                                .await;
+                        }
+                    }
+                    PasswordOutcome::Verified { rehash: None } => {}
                 }
                 s.attempts = 0;
                 self.finish_identity(s, &id, Instant::now()).await
@@ -981,4 +1007,28 @@ fn remember_tombstone(tombstones: &mut Tombstones, id: String, time: Instant, po
         time + Duration::from_secs(policy.pending_seconds),
         policy.tombstone_capacity,
     );
+}
+
+/// Result of the blocking Argon2 work for one login or registration.
+enum PasswordOutcome {
+    Registered(String),
+    Verified { rehash: Option<String> },
+}
+
+/// Argon2id with the OWASP baseline memory and time cost, split across `lanes` lanes. With the
+/// `parallel` feature the lanes run on several cores, which cuts login latency without lowering
+/// the per-guess cost.
+fn password_hasher(lanes: u32) -> Argon2<'static> {
+    let params = Params::new(Params::DEFAULT_M_COST, Params::DEFAULT_T_COST, lanes, None)
+        .expect("validated Argon2 parameters");
+    Argon2::new(Algorithm::Argon2id, Version::V0x13, params)
+}
+
+/// PHC prefix of hashes made with the current parameters; anything else is rehashed on login.
+fn password_hash_prefix(lanes: u32) -> String {
+    format!(
+        "$argon2id$v=19$m={},t={},p={lanes}$",
+        Params::DEFAULT_M_COST,
+        Params::DEFAULT_T_COST
+    )
 }

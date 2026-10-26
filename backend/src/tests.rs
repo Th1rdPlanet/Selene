@@ -528,3 +528,59 @@ async fn enable_totp(s: &service::Service, premium: bool) -> (Vec<u8>, Reply) {
     assert_eq!(confirmed.status, "TOTP_RECOVERY");
     (secret, confirmed)
 }
+#[tokio::test]
+async fn login_upgrades_a_hash_made_with_older_argon2_parameters() {
+    let directory = std::env::temp_dir().join(format!("selene-rehash-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&directory).unwrap();
+    let url = format!(
+        "sqlite://{}?mode=rwc",
+        directory.join("accounts.db").display()
+    );
+    let policy = |lanes| service::Policy {
+        password_lanes: lanes,
+        ..service::Policy::default()
+    };
+
+    // Register with the previous single-lane parameters.
+    let old = service::Service::new(&url, policy(1)).await.unwrap();
+    let mut r = request("begin");
+    assert_eq!(old.handle(r.clone()).await.status, "REGISTER");
+    r.op = "register".into();
+    assert_eq!(old.handle(r.clone()).await.status, "AUTHENTICATED");
+    let before = old
+        .storage_clone()
+        .account("alice")
+        .await
+        .unwrap()
+        .unwrap()
+        .hash;
+    assert!(before.contains(",p=1$"), "{before}");
+    drop(old);
+
+    // The current four-lane service still accepts the old hash and replaces it.
+    let current = service::Service::new(&url, policy(4)).await.unwrap();
+    r.session = uuid::Uuid::new_v4().to_string();
+    r.op = "begin".into();
+    assert_eq!(current.handle(r.clone()).await.status, "LOGIN");
+    r.op = "login".into();
+    assert_eq!(current.handle(r.clone()).await.status, "AUTHENTICATED");
+    let after = current
+        .storage_clone()
+        .account("alice")
+        .await
+        .unwrap()
+        .unwrap()
+        .hash;
+    assert!(
+        after.starts_with("$argon2id$v=19$m=19456,t=2,p=4$"),
+        "{after}"
+    );
+
+    // The upgraded hash keeps working.
+    r.session = uuid::Uuid::new_v4().to_string();
+    r.op = "begin".into();
+    assert_eq!(current.handle(r.clone()).await.status, "LOGIN");
+    r.op = "login".into();
+    assert_eq!(current.handle(r.clone()).await.status, "AUTHENTICATED");
+    std::fs::remove_dir_all(directory).ok();
+}

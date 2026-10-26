@@ -27,6 +27,7 @@ max_attempts = 3
 trust_qualify_seconds = 10
 trust_ttl_seconds = 60
 password_workers = 2
+password_lanes = 4
 tombstone_capacity = 20000
 
 [telemetry]

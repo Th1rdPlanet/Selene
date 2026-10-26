@@ -23,12 +23,34 @@ pub(crate) struct PremiumTrustRecord {
 impl Storage {
     pub async fn open(url: &str) -> anyhow::Result<Self> {
         sqlx::any::install_default_drivers();
+        let sqlite = url.starts_with("sqlite:");
+        let memory = url.contains(":memory:");
         let pool = AnyPoolOptions::new()
-            .max_connections(if url.contains(":memory:") { 1 } else { 8 })
+            .max_connections(if memory { 1 } else { 8 })
             .acquire_timeout(std::time::Duration::from_secs(5))
+            .after_connect(move |connection, _| {
+                Box::pin(async move {
+                    if sqlite {
+                        // Wait for a short write lock instead of failing the login.
+                        sqlx::query("PRAGMA busy_timeout = 5000")
+                            .execute(&mut *connection)
+                            .await?;
+                    }
+                    Ok(())
+                })
+            })
             .connect(url)
             .await
             .context("database connection failed")?;
+        if sqlite && !memory {
+            // Write-ahead logging lets account reads continue while another login writes, which
+            // removes the millisecond-scale read tails of the default rollback journal.
+            // Durability (`synchronous`) is unchanged.
+            sqlx::query("PRAGMA journal_mode = WAL")
+                .execute(&pool)
+                .await
+                .context("cannot enable SQLite write-ahead logging")?;
+        }
         sqlx::query("CREATE TABLE IF NOT EXISTS selene_accounts (name VARCHAR(16) PRIMARY KEY, password_hash VARCHAR(255) NOT NULL, premium INTEGER NOT NULL, trusted_ip VARCHAR(45) NOT NULL, trusted_until BIGINT NOT NULL)").execute(&pool).await.context("cannot create or validate selene_accounts schema")?;
         sqlx::query("CREATE TABLE IF NOT EXISTS selene_totp (name VARCHAR(16) PRIMARY KEY, encryption_version INTEGER NOT NULL, nonce VARCHAR(64) NOT NULL, ciphertext VARCHAR(512) NOT NULL, last_step BIGINT NOT NULL, created_at BIGINT NOT NULL)").execute(&pool).await.context("cannot create or validate selene_totp schema")?;
         sqlx::query("CREATE TABLE IF NOT EXISTS selene_recovery_codes (name VARCHAR(16) NOT NULL, code_hash VARCHAR(64) NOT NULL, created_at BIGINT NOT NULL, PRIMARY KEY (name, code_hash))").execute(&pool).await.context("cannot create or validate selene_recovery_codes schema")?;
@@ -195,6 +217,27 @@ impl Storage {
             .await?
             .rows_affected()
                 > 0)
+        })
+        .await
+    }
+    /// Replaces a password hash only if it is still `old_hash`, so a concurrent reset wins.
+    pub async fn upgrade_password_hash(
+        &self,
+        name: &str,
+        old_hash: &str,
+        new_hash: &str,
+    ) -> anyhow::Result<bool> {
+        crate::traces::span("db.rehash", async move {
+            Ok(sqlx::query(&self.sql(
+                "UPDATE selene_accounts SET password_hash = ? WHERE name = ? AND password_hash = ?",
+            ))
+            .bind(new_hash)
+            .bind(name.to_ascii_lowercase())
+            .bind(old_hash)
+            .execute(&self.pool)
+            .await?
+            .rows_affected()
+                == 1)
         })
         .await
     }
