@@ -11,7 +11,7 @@ Author: **~VicTim~**. Java namespace: `ru.moonlightproject.dev.selene`. Project 
 cargo test --manifest-path backend/Cargo.toml
 ```
 
-Artifacts are `paper/build/libs/paper-0.1.0-dev.jar`, `velocity/build/libs/velocity-0.1.0-dev.jar`, and the Rust binary under `backend/target` when built with Cargo. The build uses the published MoonLightBridge 0.6.0 artifacts from Maven Central and crates.io (`moonlightBridgeVersion` in `gradle.properties`, versions in `backend/Cargo.toml`); it never compiles framework sources.
+Artifacts are `paper/build/libs/paper-0.1.0-dev.jar`, `velocity/build/libs/velocity-0.1.0-dev.jar`, and the Rust binary under `backend/target` when built with Cargo. The build uses the published MoonLightBridge 0.6.1 artifacts from Maven Central and crates.io (`moonlightBridgeVersion` in `gradle.properties`, versions in `backend/Cargo.toml`); it never compiles framework sources.
 
 ## Deployment layouts
 

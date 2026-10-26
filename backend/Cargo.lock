@@ -1014,9 +1014,9 @@ dependencies = [
 
 [[package]]
 name = "moonlight-bridge-observability"
-version = "0.6.0"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cf2b73c67d60f5a31ca9e074d7660b724d3645a96a09aaa1aa46aeb430d05a53"
+checksum = "cb7ebf424c9487d798b1fcceb553a546a6ad0d153535a1f21fbe7144a00b3f48"
 dependencies = [
  "moonlight-bridge-protocol",
  "moonlight-bridge-server",
@@ -1028,18 +1028,18 @@ dependencies = [
 
 [[package]]
 name = "moonlight-bridge-protocol"
-version = "0.6.0"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "36dea791bdf0d3580fdb4a6abf2c051d8c2a33cb82f75b2fc9582e274884db43"
+checksum = "7e1395a50b7e19b36907083651acb8e8157aa93544c33cd6cbcf4b0e245ed51f"
 dependencies = [
  "zstd",
 ]
 
 [[package]]
 name = "moonlight-bridge-server"
-version = "0.6.0"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "791b69476a145b44a52ccbfed75762ec3ecbcb302ea844c4cd156c183355a233"
+checksum = "df40ef7e9bc3640d00d24aef4bdabed9deeb6476957da994b0b861c65533f057"
 dependencies = [
  "futures-core",
  "futures-util",
