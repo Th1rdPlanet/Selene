@@ -35,13 +35,24 @@ administrative commands, MoonLightBridge transport and the latest traces.
 Every backend call produces one distributed trace:
 
 ```text
-Auth/login                 selene-velocity   Velocity: the call as the proxy sees it
-└─ moonlight.rpc.53453c01  selene-velocity   MoonLightBridge client span
-   └─ Auth/login           selene-backend    Rust request span, continues the Java trace
-      ├─ db.account        selene-backend    database query
-      └─ argon2.verify     selene-backend    password hashing
+Auth/login                           selene-velocity  Velocity: the call as the proxy sees it
+└─ SeleneAuth/Call                   selene-velocity  MoonLightBridge client span
+   ├─ json.encode.Auth               selene-velocity  request serialization
+   ├─ moonlight.client.prepare       selene-velocity  admission and span start
+   ├─ moonlight.client.write         selene-velocity  writer queue and socket flush
+   ├─ moonlight.client.wait          selene-velocity  network and backend time
+   ├─ Auth/login                     selene-backend   Rust request span, continues the Java trace
+   │  ├─ moonlight.server.queue      selene-backend   from frame read to dispatch
+   │  ├─ moonlight.server.middleware selene-backend   Selene request scope around the handler
+   │  ├─ db.account                  selene-backend   database query
+   │  ├─ argon2.verify               selene-backend   password hashing
+   │  ├─ db.totp_state               selene-backend   second-factor lookup
+   │  └─ moonlight.server.write      selene-backend   response to the socket
+   ├─ moonlight.client.dispatch      selene-velocity  completion hand-off
+   └─ json.decode.Auth               selene-velocity  reply parsing
 ```
 
-Backend steps carry their real start and end times, so the Tempo waterfall shows where a login
-spent its time. Velocity spans carry `selene.op`, `selene.username` and `selene.status`; spans
+Selene steps and MoonLightBridge framework stages carry their real start and end times, so the
+Tempo waterfall shows where a login spent its time: in plugin work or in the transport. Framework
+stages are recorded only for sampled requests. Velocity spans carry `selene.op`, `selene.username` and `selene.status`; spans
 never contain passwords, codes or request bodies.

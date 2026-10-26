@@ -1,4 +1,5 @@
 plugins { base; id("com.gradleup.shadow") version "9.6.1" apply false }
+val moonlightBridgeVersion: String by project
 allprojects {
     group = "ru.moonlightproject.dev.selene"
     version = "0.1.0-dev"
@@ -18,6 +19,6 @@ subprojects {
         "testRuntimeOnly"("org.junit.platform:junit-platform-launcher")
     }
     tasks.withType<Jar>().configureEach {
-        manifest.attributes("Implementation-Vendor" to "~VicTim~", "Implementation-URL" to "https://dev.moonlightproject.ru", "MoonLightBridge-Revision" to "44eff0f9de2a8e5ceb3663d3935b7b9e327b143b")
+        manifest.attributes("Implementation-Vendor" to "~VicTim~", "Implementation-URL" to "https://dev.moonlightproject.ru", "MoonLightBridge-Version" to moonlightBridgeVersion)
     }
 }

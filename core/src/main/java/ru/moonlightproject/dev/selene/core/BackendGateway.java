@@ -3,15 +3,27 @@ import java.io.IOException;
 import java.net.URI;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.Semaphore;
 import javax.net.ssl.SSLContext;
 import ru.moonlightproject.bridge.client.MoonLightChannel;
 import ru.moonlightproject.bridge.client.MoonLightClient;
+import ru.moonlightproject.bridge.client.MoonLightCodec;
+import ru.moonlightproject.bridge.client.RpcPolicy;
 public final class BackendGateway implements AuthGateway, AccountAdminGateway {
   public static final int METHOD_ID = 1397046273;
   public static final int ADMIN_METHOD_ID = 1397046274;
+  /** Lets MoonLightBridge trace JSON encoding and decoding as stages of the client span. */
+  private static final MoonLightCodec<AuthRequest, AuthReply> AUTH_CODEC = new MoonLightCodec<>(
+      JsonCodec::encode, JsonCodec::reply, "json.encode.Auth", "json.decode.Auth");
+  private static final MoonLightCodec<AdminRequest, AdminReply> ADMIN_CODEC = new MoonLightCodec<>(
+      JsonCodec::encode, JsonCodec::adminReply, "json.encode.Admin", "json.decode.Admin");
+  /** Largest body MoonLightBridge accepts by default; the backend applies its own smaller limits. */
+  private static final int MAX_BODY_BYTES = 8 * 1024 * 1024;
+  private final RpcPolicy authPolicy;
+  private final RpcPolicy adminPolicy;
   private final MoonLightChannel client;
   private final Semaphore permits;
   private final Semaphore adminPermits;
@@ -24,6 +36,16 @@ public final class BackendGateway implements AuthGateway, AccountAdminGateway {
     adminPermits = new Semaphore(Math.max(1,Math.min(8,concurrency)));
     this.client = client;
     this.timeout = timeout;
+    authPolicy = policy(timeout, "SeleneAuth/Call");
+    adminPolicy = policy(timeout, "SeleneAdmin/Call");
+  }
+
+  /** Names the client span; no retries, since a login or admin change must never be replayed. */
+  private static RpcPolicy policy(Duration timeout, String methodName) {
+    return new RpcPolicy(timeout, Duration.ZERO,
+        new RpcPolicy.Retry(1, Duration.ofMillis(50), Duration.ofMillis(50), 1_000),
+        RpcPolicy.Idempotency.UNSPECIFIED, MAX_BODY_BYTES, MAX_BODY_BYTES, Set.of(),
+        RpcPolicy.Compression.DEFAULT, 1_000_000, methodName);
   }
   public static BackendGateway connect(String endpoint, SSLContext tls,
       boolean allowLoopbackPlaintext, Duration timeout) throws IOException {
@@ -61,9 +83,8 @@ public final class BackendGateway implements AuthGateway, AccountAdminGateway {
     if (!permits.tryAcquire())
       return CompletableFuture.failedFuture(new RejectedExecutionException("Backend busy"));
     try {
-      return client.request(METHOD_ID, JsonCodec.encode(r), timeout)
-          .whenComplete((reply, error) -> permits.release())
-          .thenApply(JsonCodec::reply);
+      return client.call(METHOD_ID, r, AUTH_CODEC, timeout, authPolicy)
+          .whenComplete((reply, error) -> permits.release());
     } catch (RuntimeException e) {
       permits.release();
       return CompletableFuture.failedFuture(e);
@@ -74,7 +95,7 @@ public final class BackendGateway implements AuthGateway, AccountAdminGateway {
   }
   private CompletableFuture<AdminReply> adminRequest(AdminRequest request){
     if(!adminPermits.tryAcquire())return CompletableFuture.failedFuture(new RejectedExecutionException("Backend admin busy"));
-    try{return client.request(ADMIN_METHOD_ID,JsonCodec.encode(request),timeout).whenComplete((reply,error)->adminPermits.release()).thenApply(JsonCodec::adminReply);}
+    try{return client.call(ADMIN_METHOD_ID,request,ADMIN_CODEC,timeout,adminPolicy).whenComplete((reply,error)->adminPermits.release());}
     catch(RuntimeException error){adminPermits.release();return CompletableFuture.failedFuture(error);}
   }
   public void close() {

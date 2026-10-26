@@ -8,7 +8,10 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
 import ru.moonlightproject.bridge.client.MoonLightChannel;
+import ru.moonlightproject.bridge.client.MoonLightCodec;
+import ru.moonlightproject.bridge.client.RpcPolicy;
 
 /** Reconnects failed channels in the background and never replays an interrupted request. */
 final class SupervisedChannel implements MoonLightChannel {
@@ -28,14 +31,29 @@ final class SupervisedChannel implements MoonLightChannel {
   }
 
   @Override public CompletableFuture<byte[]> request(int methodId, byte[] body, Duration deadline) {
+    return supervise(channel -> channel.request(methodId, body, deadline));
+  }
+
+  @Override public CompletableFuture<byte[]> request(
+      int methodId, byte[] body, Duration deadline, RpcPolicy policy) {
+    return supervise(channel -> channel.request(methodId, body, deadline, policy));
+  }
+
+  /** Forwards typed calls so the client span keeps its codec and transport stages. */
+  @Override public <Q, R> CompletableFuture<R> call(
+      int methodId, Q request, MoonLightCodec<Q, R> codec, Duration deadline, RpcPolicy policy) {
+    return supervise(channel -> channel.call(methodId, request, codec, deadline, policy));
+  }
+
+  private <T> CompletableFuture<T> supervise(Function<MoonLightChannel, CompletableFuture<T>> call) {
     MoonLightChannel channel = active.get();
     if (channel == null) {
       scheduleReconnect(0);
       return CompletableFuture.failedFuture(new IOException("Backend connection is unavailable"));
     }
-    CompletableFuture<byte[]> result;
+    CompletableFuture<T> result;
     try {
-      result = channel.request(methodId, body, deadline);
+      result = call.apply(channel);
     } catch (RuntimeException error) {
       invalidate(channel);
       return CompletableFuture.failedFuture(error);

@@ -20,6 +20,7 @@ use std::{
     cell::RefCell,
     future::Future,
     sync::{Arc, Mutex, OnceLock},
+    time::{Duration, Instant, SystemTime},
 };
 
 static TRACER: OnceLock<SdkTracer> = OnceLock::new();
@@ -89,9 +90,12 @@ struct RequestTelemetry;
 impl Telemetry for RequestTelemetry {
     fn start_request(&self, info: RequestInfo) -> Option<Box<dyn RequestObservation>> {
         let tracer = TRACER.get()?;
+        let clock = Clock::now();
         let builder = tracer
             .span_builder(format!("moonlight.rpc.{:08x}", info.method_id))
             .with_kind(SpanKind::Server)
+            // Start when MoonLightBridge read the frame, so queueing is part of the request.
+            .with_start_time(clock.system_time(info.received_at))
             .with_attributes([
                 KeyValue::new("rpc.system", "moonlight_bridge"),
                 KeyValue::new("rpc.method_id", i64::from(info.method_id)),
@@ -118,15 +122,74 @@ impl Telemetry for RequestTelemetry {
         };
         let span = Arc::new(Mutex::new(span));
         STARTED.with(|started| *started.borrow_mut() = Some((info.request_id, span.clone())));
-        Some(Box::new(RequestObservationSpan(span)))
+        Some(Box::new(RequestObservationSpan { span, clock }))
     }
 }
 
-struct RequestObservationSpan(SharedSpan);
+/// Maps monotonic instants to the wall-clock timestamps spans use.
+#[derive(Clone, Copy)]
+struct Clock {
+    instant: Instant,
+    system: SystemTime,
+}
+
+impl Clock {
+    fn now() -> Self {
+        Self {
+            instant: Instant::now(),
+            system: SystemTime::now(),
+        }
+    }
+
+    fn system_time(self, at: Instant) -> SystemTime {
+        if at >= self.instant {
+            self.system + (at - self.instant)
+        } else {
+            self.system
+                .checked_sub(self.instant - at)
+                .unwrap_or(self.system)
+        }
+    }
+}
+
+struct RequestObservationSpan {
+    span: SharedSpan,
+    clock: Clock,
+}
 
 impl RequestObservation for RequestObservationSpan {
+    /// Sampled requests also get MoonLightBridge's own stages: queue, middleware and write.
+    fn wants_timing(&self) -> bool {
+        self.span
+            .lock()
+            .map(|span| span.is_recording())
+            .unwrap_or(false)
+    }
+
+    /// Framework stages become children of the request span, next to Selene's own steps.
+    fn record_stage_at(&mut self, name: &'static str, started: Instant, duration: Duration) {
+        let Some(tracer) = TRACER.get() else {
+            return;
+        };
+        let Ok(span) = self.span.lock() else {
+            return;
+        };
+        if !span.is_recording() {
+            return;
+        }
+        let parent = Context::new().with_remote_span_context(span.span_context().clone());
+        drop(span);
+        let started_at = self.clock.system_time(started);
+        let mut stage = tracer
+            .span_builder(name)
+            .with_kind(SpanKind::Internal)
+            .with_start_time(started_at)
+            .start_with_context(tracer, &parent);
+        stage.end_with_timestamp(started_at + duration);
+    }
+
     fn finish(self: Box<Self>, outcome: RequestOutcome) {
-        let Ok(mut span) = self.0.lock() else {
+        let Ok(mut span) = self.span.lock() else {
             return;
         };
         match outcome {

@@ -1,6 +1,6 @@
 plugins { `java-library` }
 dependencies {
-    api(project(":bridge-java"))
+    api("ru.moonlightproject:moonlight-bridge-java:${property("moonlightBridgeVersion")}")
     api("com.google.code.gson:gson:2.13.2")
 }
 

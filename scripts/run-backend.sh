@@ -12,7 +12,6 @@ fail() {
 
 [[ -f "$config" ]] || fail "config not found: $config"
 command -v cargo >/dev/null 2>&1 || fail "Rust/Cargo is not installed or not available in PATH"
-[[ -f "$root/.deps/moonlightbridge/Cargo.toml" ]] || fail "MoonLightBridge is missing; run $root/scripts/bootstrap-framework.sh first"
 
 setting() {
   sed -n -E "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*\"([^\"]+)\".*/\1/p" "$config" | head -n 1
