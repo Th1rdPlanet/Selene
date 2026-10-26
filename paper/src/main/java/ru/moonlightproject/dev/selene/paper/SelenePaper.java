@@ -44,6 +44,8 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
   Session(Player p,Object connection,AuthSession auth,PresentationSnapshot snapshot){player=p;inventoryConnection=connection;this.auth=auth;this.snapshot=snapshot;}
  }
  @Override public void onEnable(){
+  // Compile the JSON codec off the main thread before the first login.
+  Thread.ofPlatform().daemon().priority(Thread.MIN_PRIORITY).name("selene-codec-warmup").start(ru.moonlightproject.dev.selene.core.JsonCodec::warmUp);
   try {
    // Bukkit may enable the same plugin instance again after /selene reload. Do not let
    // optional services from the previous configuration survive that lifecycle.

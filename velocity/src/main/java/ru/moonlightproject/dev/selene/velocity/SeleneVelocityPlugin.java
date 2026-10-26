@@ -102,6 +102,10 @@ public final class SeleneVelocityPlugin implements SeleneApi {
 
     @Subscribe
     public EventTask initialize(ProxyInitializeEvent ignored) {
+        // Compile the JSON codec before the first player connects; a proxy with few logins
+        // would otherwise keep interpreting it for a few hundred microseconds per call.
+        Thread.ofPlatform().daemon().priority(Thread.MIN_PRIORITY).name("selene-codec-warmup")
+            .start(ru.moonlightproject.dev.selene.core.JsonCodec::warmUp);
         return EventTask.async(() -> {
             try {
                 Files.createDirectories(dataDirectory);
