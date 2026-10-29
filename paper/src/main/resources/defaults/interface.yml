@@ -156,6 +156,7 @@ presentation:
     bar-enabled: true
     # Число уровня показывает количество оставшихся секунд.
     level-enabled: true
-# Selene не раздаёт resource pack сам. Допустимые значения:
-# NONE, Oraxen, ItemsAdder. Выбранный плагин должен быть установлен на этом Paper.
+# Плагин, который генерирует пак со шрифтом CAPTCHA: NONE, Oraxen или ItemsAdder.
+# Выбранный плагин должен быть установлен на этом Paper. NONE подходит и для DIALOG_FONT,
+# если готовый архив отдаёт сам Selene (captcha.resource-pack.enabled: true).
 resource-pack-provider: "ItemsAdder"

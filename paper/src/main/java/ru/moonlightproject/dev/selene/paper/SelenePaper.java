@@ -84,7 +84,7 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
    if(standalone&&!packetEventsEnabled)getLogger().warning("PacketEvents is disabled in STANDALONE mode; the client can receive the real inventory before authentication");
    String pack=settings.getString("resource-pack-provider","NONE");
    if(!Set.of("NONE","Oraxen","ItemsAdder").contains(pack) || (!pack.equals("NONE")&&!getServer().getPluginManager().isPluginEnabled(pack)))throw new IllegalArgumentException("Configured external pack manager '"+pack+"' is unavailable or failed to enable");
-   if(captchaView.equals("DIALOG_FONT")&&pack.equals("NONE"))throw new IllegalArgumentException("captcha-view DIALOG_FONT requires resource-pack-provider ItemsAdder or Oraxen");
+   if(captchaView.equals("DIALOG_FONT")&&pack.equals("NONE")&&!settings.getBoolean("captcha.resource-pack.enabled",false))throw new IllegalArgumentException("captcha-view DIALOG_FONT requires captcha.resource-pack.enabled or resource-pack-provider ItemsAdder/Oraxen");
    if(settings.getBoolean("captcha.resource-pack.enabled",false))resourcePackDelivery=ResourcePackDelivery.parse(
     settings.getString("captcha.resource-pack.id",""),settings.getString("captcha.resource-pack.url",""),settings.getString("captcha.resource-pack.sha1",""),settings.getString("captcha.resource-pack.prompt",""));
    if(packetEventsEnabled){inventoryProtection=new PacketEventsInventoryProtection();getLogger().info(messages.plain("console.packets-active",AuthMessages.literal("version",com.github.retrooper.packetevents.PacketEvents.getAPI().getVersion().toString())));}
@@ -124,7 +124,7 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
    String view=probe.getString("captcha-view","").toUpperCase(Locale.ROOT);
    if(!Set.of("MAP","DIALOG_FONT","INTERACTIVE").contains(view))throw new IllegalArgumentException("captcha-view must be MAP, DIALOG_FONT or INTERACTIVE");
    String pack=probe.getString("resource-pack-provider","NONE");
-   if(view.equals("DIALOG_FONT")&&pack.equals("NONE"))throw new IllegalArgumentException("captcha-view DIALOG_FONT requires resource-pack-provider ItemsAdder or Oraxen");
+   if(view.equals("DIALOG_FONT")&&pack.equals("NONE")&&!probe.getBoolean("captcha.resource-pack.enabled",false))throw new IllegalArgumentException("captcha-view DIALOG_FONT requires captcha.resource-pack.enabled or resource-pack-provider ItemsAdder/Oraxen");
    if(!pack.equals("NONE")&&!getServer().getPluginManager().isPluginEnabled(pack))throw new IllegalArgumentException("Configured external pack manager '"+pack+"' is unavailable");
    if(view.equals("INTERACTIVE"))InteractiveCaptchaConfig.parse(probe.getConfigurationSection("interactive-captcha"));
   }catch(Exception error){
@@ -296,7 +296,7 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
  private void presentTotpSetup(Session s,AuthReply reply,int attempt){
   if(!current(s)||s.management==null||s.management.action()!=ManagementRequest.Action.ENABLE)return;
   int maxAttempts=Math.max(1,settings.getInt("captcha.pack-load-timeout-seconds",15))*4;
-  var policy=new TotpSetupPresentationPolicy(!settings.getString("resource-pack-provider","NONE").equalsIgnoreCase("NONE"),settings.getString("captcha.resource-pack-loading","MANUAL"),maxAttempts);
+  var policy=new TotpSetupPresentationPolicy(!settings.getString("resource-pack-provider","NONE").equalsIgnoreCase("NONE")||settings.getBoolean("captcha.resource-pack.enabled",false),settings.getString("captcha.resource-pack-loading","MANUAL"),maxAttempts);
   var action=policy.action(s.packLoaded,attempt);
   if(action==TotpSetupPresentationPolicy.Action.WAIT){Bukkit.getScheduler().runTaskLater(this,()->presentTotpSetup(s,reply,attempt+1),5);return;}
   try{
