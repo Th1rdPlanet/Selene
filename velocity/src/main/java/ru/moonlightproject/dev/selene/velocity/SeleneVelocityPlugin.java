@@ -89,7 +89,7 @@ public final class SeleneVelocityPlugin implements SeleneApi {
         this.logger = logger;
         this.dataDirectory = dataDirectory;
         this.maintenance = new MaintenanceController(System::currentTimeMillis, state -> {
-            logger.warn("Selene maintenance changed: enabled={} revision={} actor={} reason={}",
+            logger.warn("[!] maintenance » enabled:{}  revision:{}  actor:{}  reason:{}",
                 state.enabled(), state.revision(), state.actor(), state.reason());
             broadcastMaintenance(state);
         });
@@ -150,14 +150,11 @@ public final class SeleneVelocityPlugin implements SeleneApi {
                     throw new IllegalStateException("fork-enabled requires a compatible Selene fork API provider");
                 }
                 if (config.forkEnabled() && fork.supportsEarlyAdmission()) {
-                    logger.info("Ядро защиты подключено: " + fork.name());
+                    logger.info("[*] core     » " + fork.name());
                     if (fork.ownsAttackDetection()) {
-                        logger.info("Управление общими функциями:");
-                        logger.info("  уровень атаки, лимиты подключений, подозрительные IP → " + fork.name()
-                            + " (protection.yml, reputation.yml)");
-                        logger.info("  капча, пароль, 2FA и окна повторной проверки по уровням → Selene (attack.yml → levels)");
-                        logger.info("  сигналы входа (ошибки, незавершённые входы) → передаются в " + fork.name());
-                        logger.info("  в attack.yml не используются: attack-auto, attack-window/recovery, пороги"
+                        logger.info("[~] owners   » attack/limits/ip=" + fork.name() + "  captcha/password/2fa=Selene");
+                        logger.info("[~] signals  » auth failures/pending ──▶ " + fork.name());
+                        logger.info("[-] skip     » attack.yml: attack-auto attack-window/recovery"
                             + " attack-*, suspicious-ip-*, failure-*, pending-sessions-*, outbound-*, per-ip-limit, per-ip-window-seconds");
                     }
                 }
@@ -220,7 +217,7 @@ public final class SeleneVelocityPlugin implements SeleneApi {
                 currentLevel(runtime, System.currentTimeMillis());
                 if (config.prometheusEnabled()) {
                     prometheus = new PrometheusExporter(config.prometheusBind(), this::renderMetrics);
-                    logger.info("Prometheus metrics on http://" + config.prometheusBind() + "/metrics");
+                    logger.info("[*] prom     » http://" + config.prometheusBind() + "/metrics");
                 }
                 proxy.getScheduler().buildTask(this, () -> {
                     RuntimeState active = runtime;
@@ -232,7 +229,7 @@ public final class SeleneVelocityPlugin implements SeleneApi {
                 logger.info(messages.plain("console-ready",VelocityMessages.literal("auth",config.authServer()),VelocityMessages.literal("target",config.defaultServer()),VelocityMessages.literal("current",runtime.protection().level().name())));
             } catch (Exception error) {
                 String reason=error.getMessage()==null?error.getClass().getSimpleName():error.getMessage();
-                logger.error("Selene startup failed: {}. Check plugins/selene/config.yml, connection.yml, attack.yml and premium.yml; the proxy will stop.",reason);
+                logger.error("[x] init     » startup aborted: {}  proxy:shutdown",reason);
                 logger.debug("Selene startup failure details",error);
                 proxy.shutdown(Component.text("Selene authentication is unavailable"));
             }
@@ -264,7 +261,7 @@ public final class SeleneVelocityPlugin implements SeleneApi {
                     state.maintenancePolicy(), maintenanceWhitelists.contains(username), known,
                     state.admission().isGreen(username, ip), premium);
                 if (!decision.allowed()) {
-                    logger.warn("Maintenance admission denied: player={} reason={} revision={}",
+                    logger.warn("[-] maintenance » player:{}  reason:{}  revision:{}",
                         username.replaceAll("[^A-Za-z0-9_]", "?"), decision.reason(), maintenanceState.revision());
                     event.setResult(PreLoginEvent.PreLoginComponentResult.denied(
                         Component.text("Server is in maintenance mode")));
@@ -546,7 +543,7 @@ public final class SeleneVelocityPlugin implements SeleneApi {
                         try {
                             state.fork().onAuthentication(current.username(), current.address(), reply.status());
                         } catch (RuntimeException error) {
-                            logger.warn("Fork authentication hook failed: " + error);
+                            logger.warn("[x] core     » auth hook failed: " + error);
                         }
                     }
                 }
@@ -670,7 +667,7 @@ public final class SeleneVelocityPlugin implements SeleneApi {
             } else return;
             updateMaintenanceTopology();
         } catch (IllegalArgumentException malformed) {
-            logger.warn("Rejected malformed maintenance message from {}", actualServer);
+            logger.warn("[-] maintenance » malformed message ignored: {}", actualServer);
         }
     }
 
@@ -802,7 +799,7 @@ public final class SeleneVelocityPlugin implements SeleneApi {
             try {
                 state.fork().appendMetrics(out);
             } catch (RuntimeException error) {
-                logger.warn("Fork metrics failed: " + error);
+                logger.warn("[x] metrics  » core metrics unavailable: " + error);
             }
         }
     }
@@ -820,7 +817,7 @@ public final class SeleneVelocityPlugin implements SeleneApi {
         } catch (ClassNotFoundException | LinkageError absent) {
             return new ForkCapabilities() {};
         } catch (ReflectiveOperationException error) {
-            logger.warn("ThirdVelocity bridge failed to start: " + error);
+            logger.warn("[x] core     » ThirdVelocity bridge startup failed: " + error);
             return new ForkCapabilities() {};
         }
     }
@@ -938,7 +935,7 @@ public final class SeleneVelocityPlugin implements SeleneApi {
             state.identities().get(target).ifPresent(authenticated::remove);
             state.authenticationGrace().invalidate(target.getUsername(), target.getRemoteAddress().getAddress());
             target.disconnect(text(target, "command-logout-kick"));
-            logger.info("Selene logout of {} by {}", target.getUsername(),
+            logger.info("[*] logout   » {}  actor:{}", target.getUsername(),
                 source instanceof Player actor ? actor.getUsername() : "console");
             source.sendMessage(state.messages().component("command-logout-done", VelocityMessages.player(target.getUsername())));
         }

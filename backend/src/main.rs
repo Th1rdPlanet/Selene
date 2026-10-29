@@ -151,22 +151,43 @@ impl Console {
     }
     fn startup(&self) {
         if self.banner {
-            for line in [
+            let purpose = if self.language == "ru" {
+                "авторизация и контроль доступа"
+            } else {
+                "authentication & access control"
+            };
+            for (index, line) in [
                 "",
-                "      ▄▄██▀▀    Selene backend",
-                "    ▄██▀        Rust • MoonLightBridge",
-                "   ███",
-                "   ███          авторизация и защита входа",
-                "    ▀██▄        ~VicTim~",
-                "      ▀▀██▄▄    dev.moonlightproject.ru",
+                "       ▄▄██▀▀    Selene backend",
+                "    ▄████▀       Rust • MoonLightBridge",
+                "   ████▀",
+                "  ████",
+                "  ████",
+                "   ████▄",
+                "    ▀████▄       ~VicTim~",
+                "       ▀▀██▄▄    dev.moonlightproject.ru",
                 "",
-            ] {
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let line = if index == 4 {
+                    format!("{line}          {purpose}")
+                } else {
+                    line.to_owned()
+                };
                 println!("[Selene/INFO] {line}");
             }
         }
         self.info(
-            &format!("Запуск • версия {}", env!("CARGO_PKG_VERSION")),
-            &format!("Starting • version {}", env!("CARGO_PKG_VERSION")),
+            &format!(
+                "[*] init     » Selene backend {}",
+                env!("CARGO_PKG_VERSION")
+            ),
+            &format!(
+                "[*] init     » Selene backend {}",
+                env!("CARGO_PKG_VERSION")
+            ),
         );
     }
 }
@@ -180,7 +201,7 @@ fn default_admin_page_size() -> u32 {
 async fn main() {
     if let Err(error) = run().await {
         // Only the contextual message: database drivers may put credentials in their error chain.
-        eprintln!("[Selene/ERROR] Запуск остановлен / Startup stopped: {error}");
+        eprintln!("[Selene/ERROR] [x] init     » startup aborted: {error}");
         std::process::exit(1);
     }
 }
@@ -202,7 +223,7 @@ async fn run() -> anyhow::Result<()> {
     config.console.startup();
     config
         .console
-        .info("Конфигурация загружена.", "Configuration loaded.");
+        .info("[+] config   » загружена", "[+] config   » loaded");
     let address: SocketAddr = config.listen.parse().with_context(|| {
         format!(
             "invalid listen address '{}' (expected numeric IP:port)",
@@ -224,9 +245,10 @@ async fn run() -> anyhow::Result<()> {
         "database URL environment variable {} is empty",
         config.database_url_env
     );
-    config
-        .console
-        .info("Подключаем базу данных…", "Connecting to database…");
+    config.console.info(
+        "[*] db       » подключение и проверка схемы…",
+        "[*] db       » connecting & verifying schema…",
+    );
     let totp_key = config.totp.resolve_key(|name| std::env::var(name).ok())?;
     let service = Arc::new(
         (if let Some(key) = totp_key {
@@ -252,8 +274,8 @@ async fn run() -> anyhow::Result<()> {
         "admin_concurrency must be positive and admin_page_size must be 1..=50"
     );
     config.console.info(
-        "База данных готова • схема проверена.",
-        "Database ready • schema checked.",
+        "[+] db       » готова, схема проверена",
+        "[+] db       » ready, schema verified",
     );
     let admin = Arc::new(AdminService::new(
         service.storage_clone(),
@@ -292,8 +314,8 @@ async fn run() -> anyhow::Result<()> {
         ));
         metrics = Some(selene);
         config.console.info(
-            &format!("Prometheus-метрики • http://{address}/metrics"),
-            &format!("Prometheus metrics • http://{address}/metrics"),
+            &format!("[*] prom     » http://{address}/metrics"),
+            &format!("[*] prom     » http://{address}/metrics"),
         );
     }
     let mut scope = None;
@@ -303,11 +325,11 @@ async fn run() -> anyhow::Result<()> {
         scope = Some(layer);
         config.console.info(
             &format!(
-                "OpenTelemetry включён • трейсы → {} • service.name={}",
+                "[*] otel     » трейсы → {}  service:{}",
                 config.telemetry.otlp_endpoint, config.telemetry.service_name
             ),
             &format!(
-                "OpenTelemetry enabled • traces → {} • service.name={}",
+                "[*] otel     » traces → {}  service:{}",
                 config.telemetry.otlp_endpoint, config.telemetry.service_name
             ),
         );
@@ -435,7 +457,7 @@ async fn run() -> anyhow::Result<()> {
     };
     config.console.info(
         &format!(
-            "Готово • слушаем {} • транспорт: {}",
+            "[+] ready    » слушаем {}  transport:{}",
             config.listen,
             if config.development_plaintext {
                 "TCP (development)"
@@ -444,7 +466,7 @@ async fn run() -> anyhow::Result<()> {
             }
         ),
         &format!(
-            "Ready • listening on {} • transport: {}",
+            "[+] ready    » listening {}  transport:{}",
             config.listen,
             if config.development_plaintext {
                 "TCP (development)"

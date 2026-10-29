@@ -5,12 +5,14 @@ import java.util.List;
 /** Console banner: a crescent moon (Selene is the moon) with the build details beside it. */
 public final class StartupBanner {
     private static final String[] MOON = {
-        "      ▄▄██▀▀  ",
-        "    ▄██▀      ",
-        "   ███        ",
-        "   ███        ",
-        "    ▀██▄      ",
-        "      ▀▀██▄▄  ",
+        "       ▄▄██▀▀  ",
+        "    ▄████▀      ",
+        "   ████▀        ",
+        "  ████          ",
+        "  ████          ",
+        "   ████▄        ",
+        "    ▀████▄      ",
+        "       ▀▀██▄▄   ",
     };
 
     private StartupBanner() {}
@@ -20,8 +22,10 @@ public final class StartupBanner {
             "Selene " + version,
             platform + " • MoonLightBridge",
             "",
-            "авторизация и защита входа",
+            "authentication & access control",
+            "",
             "~VicTim~",
+            "",
             "dev.moonlightproject.ru",
         };
         String[] out = new String[MOON.length + 2];
