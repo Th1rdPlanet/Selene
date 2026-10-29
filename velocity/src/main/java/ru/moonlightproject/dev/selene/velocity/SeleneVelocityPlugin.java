@@ -74,6 +74,10 @@ public final class SeleneVelocityPlugin implements SeleneApi {
     private final Set<UUID> authenticated = ConcurrentHashMap.newKeySet();
     private final Set<UUID> onlineProofConnections = ConcurrentHashMap.newKeySet();
     private final Set<String> trustedPremiumAdmissions = ConcurrentHashMap.newKeySet();
+    /** Offline accounts whose client proved a licence; switched to premium after the password. */
+    private final Map<String, Long> premiumUpgrades = new ConcurrentHashMap<>();
+    /** name|ip of licence claims that were sent to Mojang; still present means the attempt failed. */
+    private final Map<String, Long> licenceClaims = new ConcurrentHashMap<>();
     private final Map<String, Long> maintenanceAdmissions = new ConcurrentHashMap<>();
     private final Set<UUID> acknowledgedSessionTokens = ConcurrentHashMap.newKeySet();
     private final Map<String, String> lastServers = new ConcurrentHashMap<>();
@@ -300,20 +304,62 @@ public final class SeleneVelocityPlugin implements SeleneApi {
         }
         AuthRequest profileRequest = new AuthRequest(
             "profile", UUID.randomUUID().toString(), username, ip, "", "", false, false);
+        String name = username.toLowerCase(Locale.ROOT);
+        String claimKey = name + "|" + ip;
+        UUID loginId = event.getUniqueId();
         return EventTask.resumeWhenComplete(state.backend().call(profileRequest).thenCompose(reply -> switch (reply.status()) {
-            case "ACCOUNT_PREMIUM" -> CompletableFuture.completedFuture(true);
-            case "ACCOUNT_OFFLINE" -> CompletableFuture.completedFuture(false);
-            case "ACCOUNT_NEW" -> state.config().premiumLookupEnabled()
-                ? state.premiumLookup().hasProfile(username, now)
-                : CompletableFuture.completedFuture(false);
+            case "ACCOUNT_PREMIUM" -> CompletableFuture.completedFuture(LicenceCheck.PREMIUM);
+            case "ACCOUNT_OFFLINE", "ACCOUNT_NEW" -> claimsLicence(state, username, loginId, claimKey, now)
+                .thenApply(claim -> !claim ? LicenceCheck.OFFLINE
+                    : reply.status().equals("ACCOUNT_NEW") ? LicenceCheck.NEW_PREMIUM : LicenceCheck.UPGRADE);
             default -> CompletableFuture.failedFuture(
                 new IllegalStateException("Unexpected profile status: " + reply.status()));
-        }).handle((premium, error) -> {
-            if (error != null) event.setResult(
-                PreLoginEvent.PreLoginComponentResult.denied(text("premium-lookup-unavailable")));
-            else if (premium) event.setResult(PreLoginEvent.PreLoginComponentResult.forceOnlineMode());
+        }).handle((check, error) -> {
+            if (error != null) {
+                event.setResult(PreLoginEvent.PreLoginComponentResult.denied(text("backend-unavailable")));
+                return null;
+            }
+            switch (check) {
+                case PREMIUM -> event.setResult(PreLoginEvent.PreLoginComponentResult.forceOnlineMode());
+                case NEW_PREMIUM, UPGRADE -> {
+                    licenceClaims.put(claimKey, now + 600_000L);
+                    if (check == LicenceCheck.UPGRADE) premiumUpgrades.put(name, now + 600_000L);
+                    event.setResult(PreLoginEvent.PreLoginComponentResult.forceOnlineMode());
+                }
+                case OFFLINE -> event.setResult(PreLoginEvent.PreLoginComponentResult.forceOfflineMode());
+            }
             return null;
         }));
+    }
+
+    private enum LicenceCheck { PREMIUM, NEW_PREMIUM, UPGRADE, OFFLINE }
+
+    /**
+     * Since 1.19 the client sends its profile UUID at login. A licensed client sends the Mojang UUID
+     * of its account; offline launchers send the name-derived offline UUID or something else. Only
+     * a client that presents the real Mojang UUID of this name is asked for the online handshake,
+     * which then proves the licence. Everybody else plays with a password, without any Mojang call.
+     */
+    private CompletableFuture<Boolean> claimsLicence(RuntimeState state, String username, UUID loginId,
+                                                     String claimKey, long now) {
+        if (!state.config().premiumLookupEnabled() || loginId == null) return CompletableFuture.completedFuture(false);
+        UUID offline = UUID.nameUUIDFromBytes(("OfflinePlayer:" + username).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        if (loginId.equals(offline)) return CompletableFuture.completedFuture(false);
+        Long failed = licenceClaims.remove(claimKey);
+        if (failed != null && failed > now) {
+            // The last online handshake from this address failed: an offline launcher that copies
+            // the real UUID. Let it in with a password this time instead of failing again.
+            logger.info(ru.moonlightproject.dev.selene.core.ConsoleStyle.line("[*] premium  » player:{}  licence claim failed last time, password login"),
+                username.replaceAll("[^A-Za-z0-9_]", "?"));
+            return CompletableFuture.completedFuture(false);
+        }
+        return state.premiumLookup().profileId(username, now)
+            .thenApply(id -> id.filter(loginId::equals).isPresent())
+            .exceptionally(error -> {
+                logger.warn(ru.moonlightproject.dev.selene.core.ConsoleStyle.line("[!] premium  » Mojang lookup failed for {}: {}  password login"),
+                    username.replaceAll("[^A-Za-z0-9_]", "?"), error.getMessage());
+                return false;
+            });
     }
 
     @Subscribe
@@ -323,6 +369,8 @@ public final class SeleneVelocityPlugin implements SeleneApi {
         Player player = event.getPlayer();
         String ip = player.getRemoteAddress().getAddress().getHostAddress();
         boolean trustedPremium = trustedPremiumAdmissions.remove(premiumAdmissionKey(player.getUsername(), ip));
+        // The online handshake succeeded, so this licence claim did not fail.
+        if (player.isOnlineMode()) licenceClaims.remove(player.getUsername().toLowerCase(Locale.ROOT) + "|" + ip);
         long now = System.currentTimeMillis();
         AttackLevel level = currentLevel(state, now);
         AttackProfile profile=state.config().attackProfiles().get(level);
@@ -563,12 +611,35 @@ public final class SeleneVelocityPlugin implements SeleneApi {
             !session.premium()&&!session.passwordTrusted(),session.captchaRequired(),
             reply.totpEnabled()&&!session.totpTrusted());
         authenticated.add(connection.get());
+        Long upgrade = premiumUpgrades.remove(session.username().toLowerCase(Locale.ROOT));
+        if (upgrade != null && upgrade > System.currentTimeMillis() && session.premium()) {
+            finishPremiumUpgrade(state, player, session);
+        }
         if (onlineProofConnections.remove(connection.get()) && session.premium()) {
             state.backend().call(boundRequest("premium_trust", session, "", ""))
                 .exceptionally(error -> null);
         }
         proxy.getServer(destinationFor(player, state.config()))
             .ifPresent(server -> player.createConnectionRequest(server).fireAndForget());
+    }
+
+    private void finishPremiumUpgrade(RuntimeState state, Player player, ConnectionSessions.Session session) {
+        String name = session.username().toLowerCase(Locale.ROOT);
+        state.backend().call(boundRequest("premium_enable", session, "", "")).whenComplete((reply, error) -> {
+            boolean enabled = error == null && reply != null && reply.status().equals("PREMIUM_ENABLED");
+            if (enabled) premiumNames = withName(premiumNames, name, true);
+            logger.info(ru.moonlightproject.dev.selene.core.ConsoleStyle.line(enabled
+                ? "[+] premium  » player:{}  licence verified, account is premium now"
+                : "[-] premium  » player:{}  licence verified, switch failed: {}"),
+                player.getUsername(), enabled ? "" : error != null ? error.getMessage() : reply.status());
+            player.sendMessage(commandMessages(state, player).component(enabled ? "premium-enabled" : "premium-failed"));
+        });
+    }
+
+    private static Set<String> withName(Set<String> names, String name, boolean present) {
+        Set<String> copy = new HashSet<>(names);
+        if (present) copy.add(name); else copy.remove(name);
+        return Set.copyOf(copy);
     }
 
     private void closeReplacedSession(RuntimeState state, ConnectionSessions.Session replaced) {

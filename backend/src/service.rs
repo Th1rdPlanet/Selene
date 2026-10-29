@@ -437,8 +437,13 @@ impl Service {
                 | "totp_disable"
                 | "totp_recovery_regenerate"
                 | "premium_trust"
+                | "premium_enable"
+                | "premium_disable"
         ) {
             return Reply::status("INVALID_REQUEST", &id);
+        }
+        if s.authenticated.is_some() && matches!(r.op.as_str(), "premium_enable" | "premium_disable") {
+            return self.handle_premium(s, &r.op, &id).await;
         }
         if s.authenticated.is_some() {
             return self.handle_authenticated_totp(s, &r, &id, time).await;
@@ -446,7 +451,7 @@ impl Service {
         if r.op == "totp_verify" {
             return self.verify_login_totp(s, &r, &id, time).await;
         }
-        if r.op.starts_with("totp_") || r.op == "premium_trust" {
+        if r.op.starts_with("totp_") || r.op.starts_with("premium_") {
             return Reply::status("INVALID_REQUEST", &id);
         }
         if !s.challenge_nonce.is_empty() {
@@ -922,6 +927,27 @@ impl Service {
                 }
             }
             _ => Reply::status("AUTHENTICATED", id),
+        }
+    }
+
+    /// Switches the licence flag of the logged-in account. Only a session that passed the Mojang
+    /// online-mode handshake may do it: enabling proves the licence, disabling proves the owner.
+    async fn handle_premium(&self, s: &mut Session, op: &str, id: &str) -> Reply {
+        if !s.premium {
+            return Reply::status("PREMIUM_REQUIRES_LICENSE", id);
+        }
+        let enable = op == "premium_enable";
+        match self.storage.set_premium(&s.name, enable).await {
+            Ok(true) => Reply::status(
+                if enable {
+                    "PREMIUM_ENABLED"
+                } else {
+                    "PREMIUM_DISABLED"
+                },
+                id,
+            ),
+            Ok(false) => Reply::status("INVALID_REQUEST", id),
+            Err(_) => Reply::status("UNAVAILABLE", id),
         }
     }
 

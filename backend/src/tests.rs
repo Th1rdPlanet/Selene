@@ -235,6 +235,44 @@ async fn premium_claim_never_converts_offline() {
     assert_eq!(s.handle(r).await.status, "ACCOUNT_OFFLINE");
 }
 #[tokio::test]
+async fn premium_upgrade_needs_the_password_and_a_licence() {
+    let s = service().await;
+    let mut r = request("begin");
+    s.handle(r.clone()).await;
+    r.op = "register".into();
+    assert_eq!(s.handle(r.clone()).await.status, "AUTHENTICATED");
+    // An offline session cannot switch the flag, even when logged in.
+    r.op = "premium_enable".into();
+    assert_eq!(s.handle(r.clone()).await.status, "PREMIUM_REQUIRES_LICENSE");
+    // Nor can a licensed session that has not logged in yet.
+    r.session = uuid::Uuid::new_v4().to_string();
+    r.premium = true;
+    r.op = "begin".into();
+    assert_eq!(s.handle(r.clone()).await.status, "LOGIN");
+    r.op = "premium_enable".into();
+    assert_eq!(s.handle(r.clone()).await.status, "INVALID_REQUEST");
+    // Licence plus the account password converts the account.
+    r.op = "login".into();
+    assert_eq!(s.handle(r.clone()).await.status, "AUTHENTICATED");
+    r.op = "premium_enable".into();
+    assert_eq!(s.handle(r.clone()).await.status, "PREMIUM_ENABLED");
+    r.op = "profile".into();
+    assert_eq!(s.handle(r.clone()).await.status, "ACCOUNT_PREMIUM");
+    // From now on an offline client cannot log in with the password.
+    let mut pirate = request("begin");
+    s.handle(pirate.clone()).await;
+    pirate.op = "login".into();
+    assert_eq!(s.handle(pirate).await.status, "INVALID_CREDENTIALS");
+    // A licensed session logs in without the password and may switch back.
+    r.session = uuid::Uuid::new_v4().to_string();
+    r.op = "begin".into();
+    assert_eq!(s.handle(r.clone()).await.status, "AUTHENTICATED");
+    r.op = "premium_disable".into();
+    assert_eq!(s.handle(r.clone()).await.status, "PREMIUM_DISABLED");
+    r.op = "profile".into();
+    assert_eq!(s.handle(r).await.status, "ACCOUNT_OFFLINE");
+}
+#[tokio::test]
 async fn expiry_and_trust_require_elapsed_authenticated_time() {
     let s = service().await;
     let mut r = request("begin");

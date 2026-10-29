@@ -61,5 +61,7 @@
   "value-backend-down": "<red>недоступен</red>",
   "op-delete": "удаление",
   "op-resetPassword": "сброс пароля",
-  "op-resetTotp": "сброс 2FA"
+  "op-resetTotp": "сброс 2FA",
+  "premium-enabled": "<#c9b8ff>☾</#c9b8ff> <green>Лицензия подтверждена:</green> <gray>дальше вы входите без пароля, а с пиратского клиента под этим ником войти нельзя.</gray>",
+  "premium-failed": "<#c9b8ff>☾</#c9b8ff> <yellow>Лицензия подтверждена, но аккаунт не удалось переключить. Попробуйте зайти ещё раз.</yellow>"
 }

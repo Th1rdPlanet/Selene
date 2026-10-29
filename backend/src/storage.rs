@@ -418,6 +418,31 @@ impl Storage {
         .await
     }
 
+    /// Marks an account as licensed (password-less, Mojang handshake only) or back to offline.
+    /// Leaving premium also drops the premium trust record. Returns false for a missing account.
+    pub(crate) async fn set_premium(&self, name: &str, premium: bool) -> anyhow::Result<bool> {
+        crate::traces::span("db.set_premium", async move {
+            let canonical = name.to_ascii_lowercase();
+            let mut tx = self.pool.begin().await?;
+            let changed = sqlx::query(&self.sql("UPDATE selene_accounts SET premium = ? WHERE name = ?"))
+                .bind(if premium { 1i32 } else { 0 })
+                .bind(&canonical)
+                .execute(&mut *tx)
+                .await?
+                .rows_affected()
+                == 1;
+            if changed && !premium {
+                sqlx::query(&self.sql("DELETE FROM selene_premium_trust WHERE name = ?"))
+                    .bind(&canonical)
+                    .execute(&mut *tx)
+                    .await?;
+            }
+            tx.commit().await?;
+            Ok(changed)
+        })
+        .await
+    }
+
     pub(crate) async fn set_premium_trust(
         &self,
         name: &str,

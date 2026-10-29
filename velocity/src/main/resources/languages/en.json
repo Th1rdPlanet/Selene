@@ -61,5 +61,7 @@
   "value-backend-down": "<red>unavailable</red>",
   "op-delete": "delete",
   "op-resetPassword": "password reset",
-  "op-resetTotp": "2FA reset"
+  "op-resetTotp": "2FA reset",
+  "premium-enabled": "<#c9b8ff>☾</#c9b8ff> <green>Licence verified:</green> <gray>from now on you join without a password, and offline clients cannot use this name.</gray>",
+  "premium-failed": "<#c9b8ff>☾</#c9b8ff> <yellow>Licence verified, but the account could not be switched. Please rejoin.</yellow>"
 }

@@ -269,7 +269,7 @@ record VelocityConfig(
             .filter(alias->!alias.isEmpty()).distinct().collect(java.util.stream.Collectors.joining(","));
         if(normalized.isEmpty()||java.util.Arrays.stream(normalized.split(","))
             .anyMatch(alias->!alias.matches("[a-zA-Z0-9_-]{1,24}")))
-            throw new IllegalArgumentException("Invalid two-factor-command-aliases");
+            throw new IllegalArgumentException("Invalid command aliases: "+value);
         return normalized;
     }
     private static long positiveLong(Properties properties,String key,long fallback){
