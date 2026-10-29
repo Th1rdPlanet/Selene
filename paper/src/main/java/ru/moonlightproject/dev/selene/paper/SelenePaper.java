@@ -169,7 +169,8 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
   getServer().getMessenger().unregisterOutgoingPluginChannel(this,MANAGEMENT_CHANNEL);
  }
  private net.kyori.adventure.text.Component msg(Player player,String key){return messages.forLocale(player.getLocale()).component("messages."+key);}
- private boolean locked(Player p){Session s=sessions.get(p.getUniqueId());return s==null||LimboLockPolicy.locked(s.auth.view().stage(),s.management!=null);}
+ // A network node never runs authentication: its players were already verified on the proxy.
+ private boolean locked(Player p){if(networkNode)return false;Session s=sessions.get(p.getUniqueId());return s==null||LimboLockPolicy.locked(s.auth.view().stage(),s.management!=null);}
  /** ExoLeaf-backed protection when the server runs ExoLeaf, otherwise null. */
  private InventoryProtection exoLeafProtection(){
   try{
@@ -385,7 +386,7 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
   if(!accepted){p.sendMessage(msg(p,"not-ready"));return true;}
   request(s,name,args[0],"");return true;
  }
- @EventHandler public void quit(PlayerQuitEvent e){e.quitMessage(null);secureInput.clear(e.getPlayer().getUniqueId());resourcePackStatuses.remove(e.getPlayer().getUniqueId());Session s=sessions.get(e.getPlayer().getUniqueId());if(s!=null&&s.player==e.getPlayer()&&sessions.remove(e.getPlayer().getUniqueId(),s)){if(interactiveCaptcha!=null)interactiveCaptcha.forget(s.player);if(packetEventsEnabled)inventoryProtection.close(s.inventoryConnection);presentation.restore(s.player,s.snapshot);restoreVisibility(s);releaseMap(s);gateway.call(dto(s,"close","",""));flow.close(s.auth);}}
+ @EventHandler public void quit(PlayerQuitEvent e){if(!networkNode)e.quitMessage(null);secureInput.clear(e.getPlayer().getUniqueId());resourcePackStatuses.remove(e.getPlayer().getUniqueId());Session s=sessions.get(e.getPlayer().getUniqueId());if(s!=null&&s.player==e.getPlayer()&&sessions.remove(e.getPlayer().getUniqueId(),s)){if(interactiveCaptcha!=null)interactiveCaptcha.forget(s.player);if(packetEventsEnabled)inventoryProtection.close(s.inventoryConnection);presentation.restore(s.player,s.snapshot);restoreVisibility(s);releaseMap(s);gateway.call(dto(s,"close","",""));flow.close(s.auth);}}
  @EventHandler public void resourcePackStatus(PlayerResourcePackStatusEvent e){getLogger().info(ru.moonlightproject.dev.selene.core.ConsoleStyle.line("[*] pack     » player:"+e.getPlayer().getName()+"  status:"+e.getStatus()));Boolean loaded=switch(e.getStatus()){case SUCCESSFULLY_LOADED -> true;case DECLINED,FAILED_DOWNLOAD,INVALID_URL,FAILED_RELOAD,DISCARDED -> false;default -> null;};if(loaded==null)return;resourcePackStatuses.put(e.getPlayer().getUniqueId(),loaded);Session s=sessions.get(e.getPlayer().getUniqueId());if(s==null)return;s.packLoaded=loaded;if(loaded&&settings.getString("captcha.resource-pack-loading","MANUAL").equalsIgnoreCase("SERVER")&&s.auth.view().stage()==AuthStage.WAITING_FOR_CAPTCHA)showCaptcha(s);}
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void move(PlayerMoveEvent e){Location from=e.getFrom(),to=e.getTo();if(to!=null&&interactiveCaptcha!=null&&interactiveCaptcha.active(e.getPlayer())){interactiveCaptcha.move(e.getPlayer(),to);return;}if(locked(e.getPlayer())&&to!=null&&Countdown.movementChanged(from.getX(),from.getY(),from.getZ(),from.getYaw(),from.getPitch(),to.getX(),to.getY(),to.getZ(),to.getYaw(),to.getPitch()))e.setTo(from);}
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void teleport(PlayerTeleportEvent e){if(locked(e.getPlayer())&&e.getCause()!=PlayerTeleportEvent.TeleportCause.PLUGIN)e.setCancelled(true);}
