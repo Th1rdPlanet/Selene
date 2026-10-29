@@ -17,7 +17,7 @@ Artifacts are `paper/build/libs/paper-0.1.0-dev.jar`, `velocity/build/libs/veloc
 
 Standalone Paper connects directly to the Rust backend and uses PacketEvents when `packet-events-mode` resolves to `ENABLED`, so the real inventory never reaches an unauthenticated client. PacketEvents is optional on a dedicated `PROXY_AUTH` server and `AUTO` leaves it disabled there because that server has an isolated empty inventory. In a Velocity network, only Velocity connects to Rust; Paper talks only to Velocity through the Selene mTLS relay.
 
-Each process owns its private key. Copy only certificates or CA material required to establish trust; never copy a node's private key to another node. See [certificate setup](docs/certificates.md), [Paper adapter](docs/paper.md), [Velocity adapter](docs/velocity.md), and [backend](backend/README.md).
+Each process owns its private key. Copy only certificates or CA material required to establish trust; never copy a node's private key to another node. See [certificate setup](docs/certificates.md), [Paper adapter](docs/paper.md), [Velocity adapter](docs/velocity.md), [Java API](docs/api.md), and [backend](backend/README.md).
 
 This repository contains an operational development build, not a production security certification. A real Paper 1.21.8 + Velocity + Minecraft client packet capture and end-to-end mTLS run remains required before public deployment.
 
@@ -45,8 +45,12 @@ selene attack confirm
 
 ### API форка Velocity
 
+`fork-enabled: auto` (по умолчанию) подключает [ThirdVelocity](https://github.com/Th1rdPlanet/ThirdVelocity),
+если прокси на нём запущен, или реализацию `ForkCapabilities` через `ServiceLoader`;
+`true` требует ядро, `false` отключает. Подробнее — [docs/api.md](docs/api.md).
+
 Форк подключается через Java `ServiceLoader` и реализацию
-`ru.moonlightproject.dev.selene.core.ForkCapabilities`. При `fork-enabled: true`
+`ru.moonlightproject.dev.selene.core.ForkCapabilities`. При включённом fork API
 плагин проверяет `supportsEarlyAdmission()` и использует только быстрые локальные
 методы интерфейса. Сетевые запросы и блокировки в них недопустимы.
 

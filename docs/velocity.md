@@ -10,7 +10,7 @@ Maintenance включается только Java API плагина: `SeleneAp
 
 `/selene help` показывает только доступные вызывающему операции. Кроме управления аккаунтами доступны `status`, `session <name>`, `logout <name>` и `attack status|confirm`; права разделены на `selene.command.status`, `.session`, `.logout`, `.attack`, `.account.view` и `.account.manage`. Игрок должен сначала завершить вход в Selene. Доверенные ники можно дополнительно перечислить в `command-admins` в `connection.yml`; одна только запись ника до авторизации доступа не даёт.
 
-NORMAL и LOW не ограничивают переподключения. LOW включает CAPTCHA только подозрительным IP. MEDIUM включает CAPTCHA и per-IP rate limit для всех. STRONG допускает только точную пару username/IP из зелёного списка; после допуска лицензионный аккаунт может пройти online-mode проверку без пароля. Автоматический режим использует ограниченное окно подключений, число имён с IP и hysteresis. GeoIP/ASN/Tor/VPN источники пока не подключены.
+NORMAL и LOW не ограничивают переподключения. LOW включает CAPTCHA только подозрительным IP. MEDIUM включает CAPTCHA и per-IP rate limit для всех. STRONG допускает только точную пару username/IP из зелёного списка; после допуска лицензионный аккаунт может пройти online-mode проверку без пароля. Автоматический режим использует ограниченное окно подключений, число имён с IP и hysteresis. GeoIP, ASN, Tor и VPN источники даёт ядро ThirdVelocity (см. docs/api.md).
 
 Для неизвестного имени опционально выполняется ограниченный Mojang profile lookup. Он лишь выбирает online-mode handshake; доказательством лицензии остаётся криптографический handshake Velocity. Существующий offline-аккаунт никогда не преобразуется в premium по совпадению имени.
 
