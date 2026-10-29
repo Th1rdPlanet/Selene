@@ -24,6 +24,12 @@ public interface ForkCapabilities {
    */
   default void onAuthentication(String username, java.net.InetAddress address, String status) {
   }
+  /**
+   * Appends core metrics in Prometheus text format (lines ending with a newline). Called by the
+   * exporter thread; must be fast.
+   */
+  default void appendMetrics(StringBuilder out) {
+  }
   /** Short provider name for logs. */
   default String name() {
     return "none";

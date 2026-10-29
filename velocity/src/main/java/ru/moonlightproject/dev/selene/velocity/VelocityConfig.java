@@ -64,6 +64,8 @@ record VelocityConfig(
     boolean otelEnabled,
     String otlpEndpoint,
     String otelServiceName,
+    boolean prometheusEnabled,
+    String prometheusBind,
     Set<String> commandAdmins,
     Map<String, String> messages
 ) {
@@ -89,7 +91,8 @@ record VelocityConfig(
         "premium-lookup-concurrency", "premium-trust-enabled", "premium-trust-ttl-days",
         "premium-trust-capacity", "premium-trust-snapshot-max-age-seconds",
         "two-factor-management-timeout-seconds", "two-factor-command-aliases",
-        "telemetry-otel-enabled", "telemetry-otlp-endpoint", "telemetry-service-name", "command-admins");
+        "telemetry-otel-enabled", "telemetry-otlp-endpoint", "telemetry-service-name",
+        "telemetry-prometheus-enabled", "telemetry-prometheus-bind", "command-admins");
 
     static VelocityConfig load(Path file) throws IOException {
         Properties properties = new Properties();
@@ -166,6 +169,8 @@ record VelocityConfig(
             bool(properties, "telemetry-otel-enabled", false),
             otlpEndpoint(properties.getProperty("telemetry-otlp-endpoint", "http://127.0.0.1:4318/v1/traces").trim()),
             nonBlank(properties.getProperty("telemetry-service-name", "selene-velocity"), "telemetry-service-name"),
+            bool(properties, "telemetry-prometheus-enabled", false),
+            nonBlank(properties.getProperty("telemetry-prometheus-bind", "127.0.0.1:9466"), "telemetry-prometheus-bind"),
             names(properties.getProperty("command-admins", "")),
             messages);
     }

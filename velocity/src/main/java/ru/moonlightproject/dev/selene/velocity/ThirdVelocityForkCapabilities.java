@@ -73,6 +73,37 @@ public final class ThirdVelocityForkCapabilities implements ForkCapabilities {
     }
 
     @Override
+    public void appendMetrics(StringBuilder out) {
+        ThirdVelocityApi api = api();
+        if (api == null) return;
+        var t = api.protection().totals();
+        counter(out, "thirdvelocity_connections_total", t.connections());
+        counter(out, "thirdvelocity_refused_total", t.refused());
+        out.append("# TYPE thirdvelocity_refused_by_reason_total counter\n");
+        t.refusedByReason().forEach((reason, value) -> out.append("thirdvelocity_refused_by_reason_total{reason=\"")
+            .append(reason.replaceAll("[^a-z0-9_-]", "_")).append("\"} ").append(value).append('\n'));
+        counter(out, "thirdvelocity_handshakes_total", t.handshakes());
+        counter(out, "thirdvelocity_pings_total", t.pings());
+        counter(out, "thirdvelocity_inbound_bytes_total", t.inboundBytes());
+        counter(out, "thirdvelocity_outbound_bytes_total", t.outboundBytes());
+        counter(out, "thirdvelocity_outbound_packets_total", t.outboundPackets());
+        counter(out, "thirdvelocity_temporary_blocks_total", t.temporaryBlocks());
+        gauge(out, "thirdvelocity_temporary_blocks_active", t.activeTemporaryBlocks());
+        gauge(out, "thirdvelocity_known_addresses", t.knownAddresses());
+        gauge(out, "thirdvelocity_attack_level", api.protection().level().ordinal());
+        gauge(out, "thirdvelocity_open_connections", api.protection().traffic().openConnections());
+        gauge(out, "thirdvelocity_bans_active", api.bans().active().size());
+    }
+
+    private static void counter(StringBuilder out, String name, long value) {
+        out.append("# TYPE ").append(name).append(" counter\n").append(name).append(' ').append(value).append('\n');
+    }
+
+    private static void gauge(StringBuilder out, String name, long value) {
+        out.append("# TYPE ").append(name).append(" gauge\n").append(name).append(' ').append(value).append('\n');
+    }
+
+    @Override
     public String name() {
         return ThirdVelocity.find().map(api -> "ThirdVelocity " + api.version()).orElse("ThirdVelocity");
     }

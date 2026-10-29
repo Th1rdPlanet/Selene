@@ -80,6 +80,7 @@ public final class SeleneVelocityPlugin implements SeleneApi {
     private volatile Set<String> premiumNames = Set.of();
     private volatile RuntimeState runtime;
     private volatile VelocityTracing tracing;
+    private volatile PrometheusExporter prometheus;
     private final java.util.concurrent.atomic.AtomicReference<Boolean> backendAvailable=new java.util.concurrent.atomic.AtomicReference<>();
 
     @Inject
@@ -208,6 +209,10 @@ public final class SeleneVelocityPlugin implements SeleneApi {
                 if (twoFactorAliases.length > 1) commandMeta.aliases(java.util.Arrays.copyOfRange(twoFactorAliases, 1, twoFactorAliases.length));
                 proxy.getCommandManager().register(commandMeta.build(), new TwoFactorCommand(messages, this::beginTwoFactor));
                 currentLevel(runtime, System.currentTimeMillis());
+                if (config.prometheusEnabled()) {
+                    prometheus = new PrometheusExporter(config.prometheusBind(), this::renderMetrics);
+                    logger.info("Prometheus metrics on http://" + config.prometheusBind() + "/metrics");
+                }
                 proxy.getScheduler().buildTask(this, () -> {
                     RuntimeState active = runtime;
                     if (active != null) currentLevel(active, System.currentTimeMillis());
@@ -494,6 +499,9 @@ public final class SeleneVelocityPlugin implements SeleneApi {
             state.relay().close();
             state.backend().close();
         }
+        PrometheusExporter exporter = prometheus;
+        prometheus = null;
+        if (exporter != null) exporter.close();
         VelocityTracing spans = tracing;
         tracing = null;
         if (spans != null) spans.close();
@@ -767,6 +775,25 @@ public final class SeleneVelocityPlugin implements SeleneApi {
             session.maintenancePolicy().enableCaptcha(), session.maintenancePolicy().verifyCaptcha(),
             session.maintenancePolicy().enablePassword(), session.maintenancePolicy().verifyPassword(),
             session.maintenancePolicy().enableTotp(), session.maintenancePolicy().verifyTotp());
+    }
+
+    private void renderMetrics(StringBuilder out) {
+        RuntimeState state = runtime;
+        out.append("# TYPE selene_velocity_up gauge\nselene_velocity_up ").append(state == null ? 0 : 1).append('\n');
+        if (state == null) return;
+        out.append("# TYPE selene_protection_level gauge\nselene_protection_level ")
+            .append(state.protection().level().ordinal()).append('\n');
+        out.append("# TYPE selene_sessions gauge\nselene_sessions ").append(state.sessions().size()).append('\n');
+        out.append("# TYPE selene_authenticated_players gauge\nselene_authenticated_players ")
+            .append(authenticated.size()).append('\n');
+        out.append("# TYPE selene_online_players gauge\nselene_online_players ").append(proxy.getPlayerCount()).append('\n');
+        if (state.config().forkEnabled()) {
+            try {
+                state.fork().appendMetrics(out);
+            } catch (RuntimeException error) {
+                logger.warn("Fork metrics failed: " + error);
+            }
+        }
     }
 
     private ForkCapabilities findForkCapabilities() {

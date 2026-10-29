@@ -32,6 +32,12 @@ telemetry-otel-enabled: false
 telemetry-otlp-endpoint: "http://127.0.0.1:4318/v1/traces"
 # service.name в Tempo; должен отличаться от имени Rust backend.
 telemetry-service-name: "selene-velocity"
+# --- Prometheus ---------------------------------------------------------------
+# Метрики на http://<bind>/metrics: уровень защиты, сессии, вошедшие игроки, а на прокси
+# ThirdVelocity — ещё подключения, отказы по причинам, блокировки и трафик ядра.
+# Открывайте адрес только для Prometheus.
+telemetry-prometheus-enabled: false
+telemetry-prometheus-bind: "127.0.0.1:9466"
 # --- Команды /selene ----------------------------------------------------------
 # Ники через запятую, которым доступны все команды /selene без плагина прав.
 # Остальным нужны права selene.command.* (например, через LuckPerms). И тем, и другим
