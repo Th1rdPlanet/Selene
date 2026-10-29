@@ -95,6 +95,36 @@ public final class SeleneVelocityPlugin implements SeleneApi {
     }
 
     @Override public MaintenanceState maintenance() { return maintenance.maintenance(); }
+
+    private java.util.concurrent.CompletableFuture<ru.moonlightproject.dev.selene.core.AdminReply> adminCall(String op, String name) {
+        RuntimeState state = runtime;
+        if (state == null || !(state.backend() instanceof ru.moonlightproject.dev.selene.core.AccountAdminGateway admin)) {
+            return java.util.concurrent.CompletableFuture.failedFuture(new IllegalStateException("Selene backend is not connected"));
+        }
+        return admin.admin(new ru.moonlightproject.dev.selene.core.AdminRequest(op, name, 0, 0));
+    }
+
+    @Override public java.util.concurrent.CompletionStage<Optional<ru.moonlightproject.dev.selene.api.AccountView>> account(String name) {
+        return adminCall("info", name).thenApply(reply -> {
+            var account = reply.account();
+            if (!reply.status().equals("OK") || account == null || account.name().isEmpty()) return Optional.empty();
+            return Optional.of(new ru.moonlightproject.dev.selene.api.AccountView(account.name(), account.premium(),
+                account.trustedIp(), account.trustedUntil() > 0 ? java.time.Instant.ofEpochSecond(account.trustedUntil()) : null,
+                account.passwordReset(), account.totpEnabled()));
+        });
+    }
+
+    @Override public java.util.concurrent.CompletionStage<Boolean> resetPassword(String name) {
+        return adminCall("resetPassword", name).thenApply(reply -> reply.status().equals("OK"));
+    }
+
+    @Override public java.util.concurrent.CompletionStage<Boolean> resetTotp(String name) {
+        return adminCall("resetTotp", name).thenApply(reply -> reply.status().equals("OK"));
+    }
+
+    @Override public java.util.concurrent.CompletionStage<Boolean> deleteAccount(String name) {
+        return adminCall("delete", name).thenApply(reply -> reply.status().equals("OK"));
+    }
     @Override public java.util.concurrent.CompletionStage<MaintenanceState> setMaintenance(
         boolean enabled, String reason, String actor) {
         return maintenance.setMaintenance(enabled, reason, actor);
@@ -634,7 +664,7 @@ public final class SeleneVelocityPlugin implements SeleneApi {
         return config.defaultServer();
     }
 
-    private boolean isAuthenticated(Player player) {
+    @Override public boolean isAuthenticated(Player player) {
         RuntimeState state = runtime;
         return state != null && state.identities().get(player).filter(authenticated::contains).isPresent();
     }

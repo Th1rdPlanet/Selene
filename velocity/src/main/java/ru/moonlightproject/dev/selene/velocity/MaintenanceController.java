@@ -6,9 +6,8 @@ import java.util.concurrent.CompletionStage;
 import java.util.function.Consumer;
 import java.util.function.LongSupplier;
 import ru.moonlightproject.dev.selene.api.MaintenanceState;
-import ru.moonlightproject.dev.selene.api.SeleneApi;
 
-final class MaintenanceController implements SeleneApi {
+final class MaintenanceController {
     private final LongSupplier clock;
     private final Consumer<MaintenanceState> publisher;
     private MaintenanceState state = new MaintenanceState(false, 0, Instant.EPOCH, "", "", 0, 0, 0);
@@ -18,11 +17,11 @@ final class MaintenanceController implements SeleneApi {
         this.publisher = java.util.Objects.requireNonNull(publisher, "publisher");
     }
 
-    @Override public synchronized MaintenanceState maintenance() {
+    public synchronized MaintenanceState maintenance() {
         return state;
     }
 
-    @Override public synchronized CompletionStage<MaintenanceState> setMaintenance(
+    public synchronized CompletionStage<MaintenanceState> setMaintenance(
         boolean enabled, String reason, String actor
     ) {
         String safeReason = required(reason, "reason");
