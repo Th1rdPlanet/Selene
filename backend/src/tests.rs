@@ -403,6 +403,33 @@ async fn password_hash_does_not_block_another_session() {
 }
 
 #[tokio::test]
+async fn password_checks_queue_for_a_worker_and_overflow_gets_busy() {
+    for (queue, expected) in [(8, "AUTHENTICATED"), (0, "BUSY")] {
+        let s = service::Service::new(
+            "sqlite::memory:",
+            service::Policy {
+                password_workers: 1,
+                password_queue: queue,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let mut first = request("begin");
+        first.username = "Alice".into();
+        let mut second = request("begin");
+        second.username = "Bobby".into();
+        assert_eq!(s.handle(first.clone()).await.status, "REGISTER");
+        assert_eq!(s.handle(second.clone()).await.status, "REGISTER");
+        first.op = "register".into();
+        second.op = "register".into();
+        let (a, b) = tokio::join!(s.handle(first), s.handle(second));
+        assert_eq!(a.status, "AUTHENTICATED");
+        assert_eq!(b.status, expected, "queue {queue}");
+    }
+}
+
+#[tokio::test]
 async fn one_password_request_is_allowed_in_flight_per_session() {
     let s = service().await;
     let mut first = request("begin");

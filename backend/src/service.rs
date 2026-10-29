@@ -12,6 +12,7 @@ use serde::Deserialize;
 use std::{
     collections::{HashMap, VecDeque},
     sync::Arc,
+    sync::atomic::{AtomicUsize, Ordering},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tokio::{
@@ -28,7 +29,14 @@ pub struct Policy {
     pub max_attempts: u32,
     pub trust_qualify_seconds: u64,
     pub trust_ttl_seconds: u64,
+    /// Concurrent password hashes; 0 means one per CPU core.
     pub password_workers: usize,
+    /// Password checks that may wait for a free worker before new ones get BUSY.
+    pub password_queue: usize,
+    /// How long a password check waits for a worker.
+    pub password_wait_millis: u64,
+    /// How long a request waits for the session table instead of failing with BUSY.
+    pub busy_wait_millis: u64,
     /// Argon2id lanes computed in parallel. The memory and time cost stay the same, so an
     /// attacker pays the same per guess while a login finishes on several cores.
     pub password_lanes: u32,
@@ -91,8 +99,11 @@ impl Default for Policy {
             max_attempts: 3,
             trust_qualify_seconds: 600,
             trust_ttl_seconds: 604800,
-            // One Argon2 worker per core; lanes of concurrent hashes share the same cores.
-            password_workers: std::thread::available_parallelism().map_or(2, |n| n.get()),
+            // 0: one Argon2 worker per core; lanes of concurrent hashes share the same cores.
+            password_workers: 0,
+            password_queue: 64,
+            password_wait_millis: 3000,
+            busy_wait_millis: 500,
             password_lanes: 4,
             tombstone_capacity: 20000,
         }
@@ -140,6 +151,7 @@ pub struct Service {
     tombstones: Mutex<Tombstones>,
     policy: Policy,
     workers: Arc<Semaphore>,
+    password_waiting: AtomicUsize,
     totp: Option<TotpRuntime>,
 }
 fn now() -> i64 {
@@ -193,9 +205,12 @@ impl Service {
     }
     async fn new_internal(
         url: &str,
-        policy: Policy,
+        mut policy: Policy,
         totp: Option<TotpRuntime>,
     ) -> anyhow::Result<Self> {
+        if policy.password_workers == 0 {
+            policy.password_workers = std::thread::available_parallelism().map_or(2, |n| n.get());
+        }
         anyhow::ensure!(
             policy.session_capacity > 0
                 && policy.password_workers > 0
@@ -213,6 +228,7 @@ impl Service {
             sessions: Mutex::new(HashMap::new()),
             tombstones: Mutex::new(Tombstones::default()),
             workers: Arc::new(Semaphore::new(policy.password_workers)),
+            password_waiting: AtomicUsize::new(0),
             policy,
             totp,
         })
@@ -286,8 +302,14 @@ impl Service {
         {
             return Reply::status("INVALID_REQUEST", &id);
         }
-        // One state transition at a time; overload is rejected, never queued without bound.
-        let Ok(mut sessions) = self.sessions.try_lock() else {
+        // One state transition at a time. A request waits briefly for the table, so a login that
+        // meets a snapshot or another login is not refused; real overload still gets BUSY.
+        let Ok(mut sessions) = tokio::time::timeout(
+            Duration::from_millis(self.policy.busy_wait_millis),
+            self.sessions.lock(),
+        )
+        .await
+        else {
             return Reply::status("BUSY", &id);
         };
         let time = Instant::now();
@@ -595,10 +617,15 @@ impl Service {
         if r.op == "register" && account.is_some() && !reset_account {
             return Reply::status("ACCOUNT_EXISTS", &id);
         }
-        s.attempts += 1;
-        let Ok(permit) = self.workers.clone().try_acquire_owned() else {
+        // A worker is taken right away, or the check waits in a bounded queue with the session
+        // table released, so other requests keep flowing.
+        let immediate = self.workers.clone().try_acquire_owned().ok();
+        if immediate.is_none()
+            && self.password_waiting.load(Ordering::Acquire) >= self.policy.password_queue
+        {
             return Reply::status("BUSY", &id);
-        };
+        }
+        s.attempts += 1;
         let hash = account.map(|a| a.hash);
         let previous_hash = hash.clone();
         let registering = r.op == "register";
@@ -613,6 +640,31 @@ impl Service {
             "argon2.verify"
         };
         drop(sessions);
+        let permit = match immediate {
+            Some(permit) => permit,
+            None => {
+                self.password_waiting.fetch_add(1, Ordering::AcqRel);
+                let waited = tokio::time::timeout(
+                    Duration::from_millis(self.policy.password_wait_millis),
+                    self.workers.clone().acquire_owned(),
+                )
+                .await;
+                self.password_waiting.fetch_sub(1, Ordering::AcqRel);
+                match waited {
+                    Ok(Ok(permit)) => permit,
+                    _ => {
+                        let mut sessions = self.sessions.lock().await;
+                        if let Some(s) = sessions.get_mut(&id).filter(|session| {
+                            session.password_busy && session.password_flight == password_flight
+                        }) {
+                            s.password_busy = false;
+                            s.attempts = s.attempts.saturating_sub(1);
+                        }
+                        return Reply::status("BUSY", &id);
+                    }
+                }
+            }
+        };
         let result = crate::traces::span(
             stage,
             tokio::task::spawn_blocking(move || {
