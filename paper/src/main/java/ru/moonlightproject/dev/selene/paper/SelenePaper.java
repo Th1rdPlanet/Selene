@@ -37,7 +37,6 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
  private static final class Session {
   final Player player; final Object inventoryConnection; final AuthSession auth; final PresentationSnapshot snapshot;
   MapView map;
-  ItemStack previousMainHand;
   String captchaImage="",captchaGlyphs=""; Boolean packLoaded; int captchaDisplayGeneration;
   String interactiveNonce="";
   ManagementRequest management; boolean managementStarted;
@@ -362,11 +361,14 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
   if(packetEventsEnabled){
    // Virtual selected slot: the map opens in front of the player without exposing inventory.
    inventoryProtection.sendVirtualMainHand(s.inventoryConnection,item,s.player.getInventory().getHeldItemSlot());
-  }else {s.previousMainHand=s.player.getInventory().getItemInMainHand().clone();s.player.getInventory().setItemInMainHand(item);}
+  }else {
+   // Client-only equipment: the real held item stays in the saved inventory, so a crash cannot lose it.
+   s.player.sendEquipmentChange(s.player,org.bukkit.inventory.EquipmentSlot.HAND,item);
+  }
   s.player.sendMap(view);
  }
  private void releaseMap(Session s){if(s.map!=null){
-  if(!packetEventsEnabled){ItemStack held=s.player.getInventory().getItemInMainHand();if(held.getItemMeta() instanceof MapMeta meta&&meta.getMapView()==s.map)s.player.getInventory().setItemInMainHand(s.previousMainHand==null?new ItemStack(Material.AIR):s.previousMainHand);s.previousMainHand=null;}
+  if(!packetEventsEnabled)s.player.sendEquipmentChange(s.player,org.bukkit.inventory.EquipmentSlot.HAND,s.player.getInventory().getItemInMainHand());
   s.map.getRenderers().forEach(s.map::removeRenderer);s.map=null;
  }}
  @Override public boolean onCommand(CommandSender sender,Command cmd,String label,String[] args){

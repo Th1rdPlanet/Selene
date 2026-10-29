@@ -3,7 +3,8 @@
 Copy the `selene` directory to `plugins/ItemsAdder/contents/`, then run `/iazip`.
 The pack defines two bitmap fonts used by Paper authentication dialogs:
 
-- `selene:captcha` contains 640 private-use glyphs: 64 visual variants for each digit;
+- `selene:captcha` contains eight shaded cells (`U+E100`–`U+E107`) and an equal-width
+  blank (`U+E108`). The backend draws a mosaic, so no codepoint identifies a digit;
 - `selene:qr` contains every possible 2×4 module tile (`U+E400..U+E4FF`) used to render
   authenticator QR codes without sending a dynamically rebuilt resource pack.
 
@@ -22,3 +23,5 @@ After regeneration copy `integrations/itemsadder/selene` into
 `plugins/ItemsAdder/contents/selene`, run `/iazip`, and let ItemsAdder distribute the pack.
 Keep `captcha.font: selene:captcha` and `dialogs.totp-setup.qr-font: selene:qr` in
 Paper `interface.yml`.
+
+Packs built before the shade-cell layout are incompatible and must be regenerated.

@@ -9,6 +9,8 @@ import io.papermc.paper.registry.data.dialog.type.DialogType;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.key.Key;
 import net.kyori.adventure.text.event.ClickCallback;
+import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.text.format.ShadowColor;
 import org.bukkit.entity.Player;
 import org.bukkit.configuration.ConfigurationSection;
 
@@ -35,7 +37,9 @@ final class AuthDialogs {
   String path="dialogs.captcha";
   var answer=DialogInput.text("answer",messages.component(path+".answer.label"))
    .width(config.getInt(path+".answer.width",220)).labelVisible(config.getBoolean(path+".answer.label-visible",true)).maxLength(5).build();
-  Component glyphLine=Component.text(glyphs).font(Key.key(config.getString("captcha.font","selene:captcha")));
+  Component glyphLine=Component.text(glyphs).font(Key.key(config.getString("captcha.font","selene:captcha")))
+   .color(NamedTextColor.WHITE).shadowColor(ShadowColor.none());
+  int bodyWidth=CaptchaMosaicLayout.bodyWidth(glyphs,config.getInt(path+".body-width",320));
   Component body=messages.component(path+".body-before").append(Component.newline()).append(glyphLine).append(Component.newline()).append(messages.component(path+".body-after"));
   var options=ClickCallback.Options.builder().uses(1).lifetime(Duration.ofSeconds(config.getLong("dialogs.callback-lifetime-seconds",180))).build();
   var buttonBuilder=ActionButton.builder(messages.component(path+".button.text")).width(config.getInt(path+".button.width",150))
@@ -43,7 +47,7 @@ final class AuthDialogs {
   String tooltip=messages.template(path+".button.tooltip");if(!tooltip.isEmpty())buttonBuilder.tooltip(messages.component(path+".button.tooltip"));
   var base=DialogBase.builder(messages.component(path+".title")).externalTitle(messages.component(path+".external-title"))
    .canCloseWithEscape(canClose(config,path)).pause(config.getBoolean("dialogs.pause",false)).afterAction(DialogBase.DialogAfterAction.CLOSE)
-   .body(List.of(DialogBody.plainMessage(body,config.getInt(path+".body-width",320)))).inputs(List.of(answer)).build();
+   .body(List.of(DialogBody.plainMessage(body,bodyWidth))).inputs(List.of(answer)).build();
   player.showDialog(Dialog.create(factory->factory.empty().base(base).type(buttonType(buttonBuilder.build(),config,path))));
  }
 

@@ -141,12 +141,13 @@ async fn captcha_cannot_be_bypassed_or_reset_by_begin() {
     let first = s.handle(r.clone()).await;
     assert_eq!(first.status, "CAPTCHA");
     assert!(first.image.starts_with("iVBOR"));
-    assert_eq!(first.captcha_glyphs.chars().count(), 5);
+    let rows: Vec<&str> = first.captcha_glyphs.split('\n').collect();
+    assert_eq!(rows.len(), 10);
+    assert!(rows.iter().all(|row| row.chars().count() == 31));
     assert!(
-        first
-            .captcha_glyphs
-            .chars()
-            .all(|c| ('\u{e000}'..='\u{e27f}').contains(&c))
+        rows.iter()
+            .flat_map(|row| row.chars())
+            .all(|c| ('\u{e100}'..='\u{e108}').contains(&c))
     );
     r.op = "register".into();
     assert_eq!(s.handle(r.clone()).await.status, "INVALID_REQUEST");
@@ -350,6 +351,47 @@ async fn password_completion_after_session_expiry_cannot_register() {
     assert_eq!(s.handle(r.clone()).await.status, "EXPIRED");
     r.op = "profile".into();
     assert_eq!(s.handle(r).await.status, "ACCOUNT_NEW");
+}
+
+#[tokio::test]
+async fn password_hash_does_not_block_another_session() {
+    let s = service().await;
+    let mut slow = request("begin");
+    assert_eq!(s.handle(slow.clone()).await.status, "REGISTER");
+    slow.op = "register".into();
+    let other = request("begin");
+    let (registered, began) = tokio::join!(s.handle(slow), s.handle(other));
+    assert_eq!(registered.status, "AUTHENTICATED");
+    assert_eq!(began.status, "REGISTER");
+}
+
+#[tokio::test]
+async fn one_password_request_is_allowed_in_flight_per_session() {
+    let s = service().await;
+    let mut first = request("begin");
+    assert_eq!(s.handle(first.clone()).await.status, "REGISTER");
+    first.op = "register".into();
+    let mut second = first.clone();
+    second.password = "another long password".into();
+    let (first_reply, second_reply) = tokio::join!(s.handle(first), s.handle(second));
+    assert_eq!(first_reply.status, "AUTHENTICATED");
+    assert_eq!(second_reply.status, "BUSY");
+}
+
+#[tokio::test]
+async fn closing_session_during_password_hash_prevents_registration() {
+    let s = service().await;
+    let mut register = request("begin");
+    assert_eq!(s.handle(register.clone()).await.status, "REGISTER");
+    register.op = "register".into();
+    let mut close = register.clone();
+    close.op = "close".into();
+    close.password.clear();
+    let (registration, closed) = tokio::join!(s.handle(register.clone()), s.handle(close));
+    assert_eq!(closed.status, "CLOSED");
+    assert_eq!(registration.status, "EXPIRED");
+    register.op = "profile".into();
+    assert_eq!(s.handle(register).await.status, "ACCOUNT_NEW");
 }
 
 #[tokio::test]
