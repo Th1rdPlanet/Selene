@@ -354,6 +354,34 @@ public final class SeleneVelocityPlugin implements SeleneApi {
         }
     }
 
+    /**
+     * In offline mode permissions are keyed by a UUID derived from the name, so anyone using an
+     * admin's name would inherit the admin's proxy permissions before typing a password. Until
+     * Selene authentication finishes every permission check answers FALSE.
+     */
+    @Subscribe(order = com.velocitypowered.api.event.PostOrder.LAST)
+    public void permissionsSetup(com.velocitypowered.api.event.permission.PermissionsSetupEvent event) {
+        if (!(event.getSubject() instanceof Player player)) return;
+        com.velocitypowered.api.permission.PermissionProvider original = event.getProvider();
+        event.setProvider(subject -> {
+            com.velocitypowered.api.permission.PermissionFunction delegate = original.createFunction(subject);
+            return permission -> isAuthenticated(player)
+                ? delegate.getPermissionValue(permission)
+                : com.velocitypowered.api.permission.Tristate.FALSE;
+        });
+    }
+
+    /**
+     * Proxy commands of unauthenticated players are never executed on the proxy; they are only
+     * forwarded to the auth server, where /login and /register live.
+     */
+    @Subscribe(order = com.velocitypowered.api.event.PostOrder.FIRST)
+    public void commandExecute(com.velocitypowered.api.event.command.CommandExecuteEvent event) {
+        if (event.getCommandSource() instanceof Player player && runtime != null && !isAuthenticated(player)) {
+            event.setResult(com.velocitypowered.api.event.command.CommandExecuteEvent.CommandResult.forwardToServer());
+        }
+    }
+
     @Subscribe
     public void chooseInitialServer(PlayerChooseInitialServerEvent event) {
         RuntimeState state = runtime;
