@@ -28,6 +28,15 @@ final class LimboManager {
   world.setSpawnLocation(new Location(world,x,y,z,yaw,pitch));
   world.setGameRule(GameRule.DO_MOB_SPAWNING,false);world.setGameRule(GameRule.DO_DAYLIGHT_CYCLE,false);world.setGameRule(GameRule.DO_WEATHER_CYCLE,false);
   world.setTime(6000);world.setStorm(false);world.setThundering(false);
+  if(mode.equals("MANAGED"))placeSupport();
+ }
+
+ // The managed limbo is empty void: an invisible 3x3 barrier under the anchor keeps a held player
+ // on the ground, so the client does not fall and vanilla does not kick them for floating.
+ private void placeSupport(){
+  int bx=Location.locToBlock(x),by=Location.locToBlock(y)-1,bz=Location.locToBlock(z);
+  if(by<world.getMinHeight())return;
+  for(int dx=-1;dx<=1;dx++)for(int dz=-1;dz<=1;dz++){var block=world.getBlockAt(bx+dx,by,bz+dz);if(block.getType().isAir())block.setType(Material.BARRIER,false);}
  }
 
  void enter(Player player){if(world==null)throw new IllegalStateException("Limbo is not loaded");player.teleport(new Location(world,x,y,z,yaw,pitch),PlayerTeleportEvent.TeleportCause.PLUGIN);}
