@@ -56,9 +56,21 @@ public final class ThirdVelocityForkCapabilities implements ForkCapabilities {
     }
 
     @Override
+    public boolean ownsAttackDetection() {
+        return ThirdVelocity.isPresent();
+    }
+
+    @Override
+    public void reportPendingLogins(int pending) {
+        ThirdVelocityApi api = api();
+        if (api != null) api.protection().reportPendingLogins("selene", pending);
+    }
+
+    @Override
     public void onAuthentication(String username, InetAddress address, String status) {
         ThirdVelocityApi api = api();
         if (api == null) return;
+        api.protection().reportAuthentication(!status.equals("AUTHENTICATED"));
         switch (status) {
             case "AUTHENTICATED" -> {
                 api.alts().recordAuthenticated(username, address);

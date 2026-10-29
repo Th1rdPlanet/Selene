@@ -151,6 +151,15 @@ public final class SeleneVelocityPlugin implements SeleneApi {
                 }
                 if (config.forkEnabled() && fork.supportsEarlyAdmission()) {
                     logger.info("Ядро защиты подключено: " + fork.name());
+                    if (fork.ownsAttackDetection()) {
+                        logger.info("Управление общими функциями:");
+                        logger.info("  уровень атаки, лимиты подключений, подозрительные IP → " + fork.name()
+                            + " (protection.yml, reputation.yml)");
+                        logger.info("  капча, пароль, 2FA и окна повторной проверки по уровням → Selene (attack.yml → levels)");
+                        logger.info("  сигналы входа (ошибки, незавершённые входы) → передаются в " + fork.name());
+                        logger.info("  в attack.yml не используются: attack-auto, attack-window/recovery, пороги"
+                            + " attack-*, suspicious-ip-*, failure-*, pending-sessions-*, outbound-*, per-ip-limit, per-ip-window-seconds");
+                    }
                 }
                 SSLContext tls = TlsContexts.load(
                     config.keyStore(), config.keyStorePasswordEnv(),
@@ -271,12 +280,14 @@ public final class SeleneVelocityPlugin implements SeleneApi {
         state.attacks().observe(ip, username, now);
         AttackLevel level = currentLevel(state, now);
         AttackProfile profile=state.config().attackProfiles().get(level);
-        boolean suspicious = state.fork().suspicious(username, ip) || state.attacks().suspicious(ip, now);
+        boolean suspicious = state.fork().suspicious(username, ip)
+            || (!coreOwnsAttack(state) && state.attacks().suspicious(ip, now));
         if (profile.greenlistOnly() && !state.admission().isGreen(username, ip)) {
             event.setResult(PreLoginEvent.PreLoginComponentResult.denied(text("strong")));
             return null;
         }
-        if (profile.reconnectLimit() && !state.admission().admit(AttackLevel.MEDIUM, ip, now)) {
+        // With ThirdVelocity the per-IP connection limits are the core's (protection.yml).
+        if (profile.reconnectLimit() && !coreOwnsAttack(state) && !state.admission().admit(AttackLevel.MEDIUM, ip, now)) {
             event.setResult(PreLoginEvent.PreLoginComponentResult.denied(text("busy")));
             return null;
         }
@@ -319,7 +330,7 @@ public final class SeleneVelocityPlugin implements SeleneApi {
         AttackLevel level = currentLevel(state, now);
         AttackProfile profile=state.config().attackProfiles().get(level);
         boolean suspicious = state.fork().suspicious(player.getUsername(), ip)
-            || state.attacks().suspicious(ip, now);
+            || (!coreOwnsAttack(state) && state.attacks().suspicious(ip, now));
         boolean premium = player.isOnlineMode() || trustedPremium;
         AuthenticationGraceCache.Decision grace=state.authenticationGrace().decision(
             player.getUsername(),player.getRemoteAddress().getAddress(),profile);
@@ -814,12 +825,25 @@ public final class SeleneVelocityPlugin implements SeleneApi {
         }
     }
 
+    private static boolean coreOwnsAttack(RuntimeState state) {
+        return state.config().forkEnabled() && state.fork().ownsAttackDetection();
+    }
+
     private AttackLevel currentLevel(RuntimeState state, long now) {
         synchronized (state.protection()) {
             AttackLevel desired = state.config().attackLevel();
             String source = "конфигурация";
             String reason = "заданный минимальный уровень";
             int pending=Math.max(0,state.sessions().size()-authenticated.size());
+            if (coreOwnsAttack(state)) {
+                // ThirdVelocity owns the network attack level; Selene only reports its signals.
+                state.fork().reportPendingLogins(pending);
+                AttackLevel detected = state.fork().attackLevel();
+                if (detected.ordinal() >= desired.ordinal()) {
+                    desired = detected; source = state.fork().name(); reason = "уровень атаки ядра";
+                }
+                return state.protection().update(desired, source, reason, now);
+            }
             if (state.config().autoAttack()) {
                 var traffic=state.config().forkEnabled()?state.fork().protectionSignals():ru.moonlightproject.dev.selene.core.ProtectionSignals.UNAVAILABLE;
                 AttackLevel detected = state.attacks().level(now,pending,traffic);

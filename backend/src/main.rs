@@ -153,10 +153,12 @@ impl Console {
         if self.banner {
             for line in [
                 "",
-                "    .-''-.    Selene Rust backend",
-                "   / .--'     MoonLightBridge",
-                "   \\ '--.     ~VicTim~",
-                "    '-..-'    dev.moonlightproject.ru",
+                "      ▄▄██▀▀    Selene backend",
+                "    ▄██▀        Rust • MoonLightBridge",
+                "   ███",
+                "   ███          авторизация и защита входа",
+                "    ▀██▄        ~VicTim~",
+                "      ▀▀██▄▄    dev.moonlightproject.ru",
                 "",
             ] {
                 println!("[Selene/INFO] {line}");

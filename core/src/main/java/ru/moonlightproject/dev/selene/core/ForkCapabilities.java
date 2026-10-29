@@ -30,6 +30,16 @@ public interface ForkCapabilities {
    */
   default void appendMetrics(StringBuilder out) {
   }
+  /**
+   * True when the core is the single owner of attack detection, per-IP limits and IP
+   * suspicion. Selene then disables its own automatic detection and only reports signals.
+   */
+  default boolean ownsAttackDetection() {
+    return false;
+  }
+  /** Logins currently in progress (connected, not authenticated); called once per second. */
+  default void reportPendingLogins(int pending) {
+  }
   /** Short provider name for logs. */
   default String name() {
     return "none";

@@ -1,5 +1,10 @@
 # Selene / Velocity — attack.yml
 # Только настройки прокси. Тексты находятся в languages/<язык>.json.
+#
+# С ThirdVelocity уровень атаки во всей сети определяет ядро (protection.yml), а Selene
+# только передаёт ему сигналы входа. Тогда здесь действуют attack-level (нижний предел)
+# и поведение по уровням (раздел levels); разделы с пометкой [без ThirdVelocity]
+# не используются — Selene перечисляет их в консоли при запуске.
 
 # --- Режим защиты -----------------------------------------------------------
 # Ручной нижний предел режима: NORMAL, LOW, MEDIUM или STRONG.
@@ -8,7 +13,7 @@
 # MEDIUM: CAPTCHA всем; действует per-IP ограничение входов.
 # STRONG: допускаются только доверенные username+IP; premium проверяется после допуска.
 attack-level: "NORMAL"
-# Автоматически повышать режим по коротким всплескам подключений.
+# [без ThirdVelocity] Автоматически повышать режим по коротким всплескам подключений.
 attack-auto: true
 # Размер окна наблюдения и время спокойствия перед возвратом к нижнему режиму.
 attack-window-seconds: 10
@@ -20,11 +25,11 @@ attack-low-connections: 30
 attack-medium-connections: 60
 # Порог запроса STRONG: число подключений за окно; включение требует команды консоли.
 attack-strong-connections: 100
-# IP считается подозрительным, если в одном окне превышен любой порог ниже.
+# [без ThirdVelocity] IP считается подозрительным, если в одном окне превышен любой порог ниже.
 suspicious-ip-connections: 8
 # Сколько разных ников с одного IP за окно считается подозрительной активностью.
 suspicious-ip-usernames: 4
-# Дополнительные сигналы считаются в том же окне. Доля ошибок учитывается только
+# [без ThirdVelocity] Дополнительные сигналы считаются в том же окне. Доля ошибок учитывается только
 # после minimum-samples; значения ratio задаются целым процентом.
 failure-minimum-samples: 20
 failure-ratio-low-percent: 50
@@ -32,7 +37,7 @@ failure-ratio-medium-percent: 75
 # Одновременно незавершённые CAPTCHA/входы. STRONG всё равно потребует подтверждения.
 pending-sessions-medium: 100
 pending-sessions-strong: 500
-# Исходящий трафик берётся только из ForkCapabilities.protectionSignals().
+# [без ThirdVelocity] Исходящий трафик берётся только из ForkCapabilities.protectionSignals().
 # Обычный Velocity этих счётчиков не предоставляет, поэтому без форка пороги не срабатывают.
 outbound-packets-low-per-second: 10000
 outbound-packets-medium-per-second: 25000
@@ -86,7 +91,7 @@ profiles:
     password-grace-seconds: 0
     captcha-grace-seconds: 0
     totp-grace-seconds: 0
-# Используется при MEDIUM: не больше N входов с IP за указанное окно.
+# [без ThirdVelocity] Используется при MEDIUM: не больше N входов с IP за указанное окно.
 per-ip-limit: 3
 # Окно ограничения повторных входов с IP, секунды.
 per-ip-window-seconds: 10
