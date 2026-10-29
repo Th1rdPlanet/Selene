@@ -89,7 +89,7 @@ public final class SeleneVelocityPlugin implements SeleneApi {
         this.logger = logger;
         this.dataDirectory = dataDirectory;
         this.maintenance = new MaintenanceController(System::currentTimeMillis, state -> {
-            logger.warn("[!] maintenance » enabled:{}  revision:{}  actor:{}  reason:{}",
+            logger.warn(ru.moonlightproject.dev.selene.core.ConsoleStyle.line("[!] maintenance » enabled:{}  revision:{}  actor:{}  reason:{}"),
                 state.enabled(), state.revision(), state.actor(), state.reason());
             broadcastMaintenance(state);
         });
@@ -150,12 +150,12 @@ public final class SeleneVelocityPlugin implements SeleneApi {
                     throw new IllegalStateException("fork-enabled requires a compatible Selene fork API provider");
                 }
                 if (config.forkEnabled() && fork.supportsEarlyAdmission()) {
-                    logger.info("[*] core     » " + fork.name());
+                    logger.info(ru.moonlightproject.dev.selene.core.ConsoleStyle.line("[*] core     » " + fork.name()));
                     if (fork.ownsAttackDetection()) {
-                        logger.info("[~] owners   » attack/limits/ip=" + fork.name() + "  captcha/password/2fa=Selene");
-                        logger.info("[~] signals  » auth failures/pending ──▶ " + fork.name());
-                        logger.info("[-] skip     » attack.yml: attack-auto attack-window/recovery"
-                            + " attack-*, suspicious-ip-*, failure-*, pending-sessions-*, outbound-*, per-ip-limit, per-ip-window-seconds");
+                        logger.info(ru.moonlightproject.dev.selene.core.ConsoleStyle.line("[~] owners   » attack/limits/ip=" + fork.name() + "  captcha/password/2fa=Selene"));
+                        logger.info(ru.moonlightproject.dev.selene.core.ConsoleStyle.line("[~] signals  » auth failures/pending ──▶ " + fork.name()));
+                        logger.info(ru.moonlightproject.dev.selene.core.ConsoleStyle.line("[-] skip     » attack.yml: attack-auto attack-window/recovery"
+                            + " attack-*, suspicious-ip-*, failure-*, pending-sessions-*, outbound-*, per-ip-limit, per-ip-window-seconds"));
                     }
                 }
                 SSLContext tls = TlsContexts.load(
@@ -217,7 +217,7 @@ public final class SeleneVelocityPlugin implements SeleneApi {
                 currentLevel(runtime, System.currentTimeMillis());
                 if (config.prometheusEnabled()) {
                     prometheus = new PrometheusExporter(config.prometheusBind(), this::renderMetrics);
-                    logger.info("[*] prom     » http://" + config.prometheusBind() + "/metrics");
+                    logger.info(ru.moonlightproject.dev.selene.core.ConsoleStyle.line("[*] prom     » http://" + config.prometheusBind() + "/metrics"));
                 }
                 proxy.getScheduler().buildTask(this, () -> {
                     RuntimeState active = runtime;
@@ -229,7 +229,7 @@ public final class SeleneVelocityPlugin implements SeleneApi {
                 logger.info(messages.plain("console-ready",VelocityMessages.literal("auth",config.authServer()),VelocityMessages.literal("target",config.defaultServer()),VelocityMessages.literal("current",runtime.protection().level().name())));
             } catch (Exception error) {
                 String reason=error.getMessage()==null?error.getClass().getSimpleName():error.getMessage();
-                logger.error("[x] init     » startup aborted: {}  proxy:shutdown",reason);
+                logger.error(ru.moonlightproject.dev.selene.core.ConsoleStyle.line("[x] init     » startup aborted: {}  proxy:shutdown"),reason);
                 logger.debug("Selene startup failure details",error);
                 proxy.shutdown(Component.text("Selene authentication is unavailable"));
             }
@@ -261,7 +261,7 @@ public final class SeleneVelocityPlugin implements SeleneApi {
                     state.maintenancePolicy(), maintenanceWhitelists.contains(username), known,
                     state.admission().isGreen(username, ip), premium);
                 if (!decision.allowed()) {
-                    logger.warn("[-] maintenance » player:{}  reason:{}  revision:{}",
+                    logger.warn(ru.moonlightproject.dev.selene.core.ConsoleStyle.line("[-] maintenance » player:{}  reason:{}  revision:{}"),
                         username.replaceAll("[^A-Za-z0-9_]", "?"), decision.reason(), maintenanceState.revision());
                     event.setResult(PreLoginEvent.PreLoginComponentResult.denied(
                         Component.text("Server is in maintenance mode")));
@@ -543,7 +543,7 @@ public final class SeleneVelocityPlugin implements SeleneApi {
                         try {
                             state.fork().onAuthentication(current.username(), current.address(), reply.status());
                         } catch (RuntimeException error) {
-                            logger.warn("[x] core     » auth hook failed: " + error);
+                            logger.warn(ru.moonlightproject.dev.selene.core.ConsoleStyle.line("[x] core     » auth hook failed: " + error));
                         }
                     }
                 }
@@ -667,7 +667,7 @@ public final class SeleneVelocityPlugin implements SeleneApi {
             } else return;
             updateMaintenanceTopology();
         } catch (IllegalArgumentException malformed) {
-            logger.warn("[-] maintenance » malformed message ignored: {}", actualServer);
+            logger.warn(ru.moonlightproject.dev.selene.core.ConsoleStyle.line("[-] maintenance » malformed message ignored: {}"), actualServer);
         }
     }
 
@@ -799,7 +799,7 @@ public final class SeleneVelocityPlugin implements SeleneApi {
             try {
                 state.fork().appendMetrics(out);
             } catch (RuntimeException error) {
-                logger.warn("[x] metrics  » core metrics unavailable: " + error);
+                logger.warn(ru.moonlightproject.dev.selene.core.ConsoleStyle.line("[x] metrics  » core metrics unavailable: " + error));
             }
         }
     }
@@ -817,7 +817,7 @@ public final class SeleneVelocityPlugin implements SeleneApi {
         } catch (ClassNotFoundException | LinkageError absent) {
             return new ForkCapabilities() {};
         } catch (ReflectiveOperationException error) {
-            logger.warn("[x] core     » ThirdVelocity bridge startup failed: " + error);
+            logger.warn(ru.moonlightproject.dev.selene.core.ConsoleStyle.line("[x] core     » ThirdVelocity bridge startup failed: " + error));
             return new ForkCapabilities() {};
         }
     }
@@ -935,7 +935,7 @@ public final class SeleneVelocityPlugin implements SeleneApi {
             state.identities().get(target).ifPresent(authenticated::remove);
             state.authenticationGrace().invalidate(target.getUsername(), target.getRemoteAddress().getAddress());
             target.disconnect(text(target, "command-logout-kick"));
-            logger.info("[*] logout   » {}  actor:{}", target.getUsername(),
+            logger.info(ru.moonlightproject.dev.selene.core.ConsoleStyle.line("[*] logout   » {}  actor:{}"), target.getUsername(),
                 source instanceof Player actor ? actor.getUsername() : "console");
             source.sendMessage(state.messages().component("command-logout-done", VelocityMessages.player(target.getUsername())));
         }

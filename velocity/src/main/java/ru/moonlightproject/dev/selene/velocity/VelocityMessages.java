@@ -40,7 +40,7 @@ final class VelocityMessages {
   return miniMessage.deserialize(template,resolvers);
  }
 
- String plain(String key,TagResolver... resolvers){return net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText().serialize(component(key,resolvers));}
+ String plain(String key,TagResolver... resolvers){return ru.moonlightproject.dev.selene.core.ConsoleStyle.line(net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText().serialize(component(key,resolvers)));}
  static TagResolver literal(String key,String value){return Placeholder.component(key,Component.text(value));}
  static TagResolver player(String value){return literal("player",value);}
  static TagResolver account(String value){return literal("account",value);}

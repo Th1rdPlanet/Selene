@@ -1,39 +1,43 @@
 package ru.moonlightproject.dev.selene.core;
 
+import java.util.ArrayList;
 import java.util.List;
 
-/** Console banner: a crescent moon (Selene is the moon) with the build details beside it. */
+/** Console banner: a crescent moon tilted counter-clockwise (Selene is the moon goddess). */
 public final class StartupBanner {
+    // Generated from two offset circles; the lower horn reaches further right than the upper one.
     private static final String[] MOON = {
-        "       ▄▄██▀▀  ",
-        "    ▄████▀      ",
-        "   ████▀        ",
-        "  ████          ",
-        "  ████          ",
-        "   ████▄        ",
-        "    ▀████▄      ",
-        "       ▀▀██▄▄   ",
+        "     ▄          ",
+        "   ▄█▀          ",
+        "  ███           ",
+        " ████           ",
+        " ████           ",
+        " ████▄          ",
+        "  █████▄        ",
+        "   ▀█████▄▄     ",
+        "     ▀▀██████▀▀ ",
     };
 
     private StartupBanner() {}
 
     public static List<String> lines(String version, String platform) {
         String[] text = {
-            "Selene " + version,
-            platform + " • MoonLightBridge",
+            ConsoleStyle.DIM + "·      ✦" + ConsoleStyle.RESET,
+            ConsoleStyle.BOLD + ConsoleStyle.WHITE + "S E L E N E" + ConsoleStyle.RESET + "  " + ConsoleStyle.GRAY + version + ConsoleStyle.RESET,
+            ConsoleStyle.GRAY + "─────────────────────────────" + ConsoleStyle.RESET,
+            ConsoleStyle.CYAN + platform + ConsoleStyle.GRAY + " • " + ConsoleStyle.CYAN + "MoonLightBridge" + ConsoleStyle.RESET,
+            ConsoleStyle.WHITE + "authentication & access control" + ConsoleStyle.RESET,
             "",
-            "authentication & access control",
-            "",
-            "~VicTim~",
-            "",
-            "dev.moonlightproject.ru",
+            ConsoleStyle.MAGENTA + "~VicTim~" + ConsoleStyle.RESET,
+            ConsoleStyle.GRAY + "dev.moonlightproject.ru" + ConsoleStyle.RESET,
+            ConsoleStyle.DIM + "        ✦    ·" + ConsoleStyle.RESET,
         };
-        String[] out = new String[MOON.length + 2];
-        out[0] = "";
+        List<String> out = new ArrayList<>();
+        out.add("");
         for (int i = 0; i < MOON.length; i++) {
-            out[i + 1] = MOON[i] + "  " + text[i];
+            out.add(ConsoleStyle.MOON + MOON[i] + ConsoleStyle.RESET + "  " + text[i]);
         }
-        out[out.length - 1] = "";
-        return List.of(out);
+        out.add("");
+        return List.copyOf(out);
     }
 }

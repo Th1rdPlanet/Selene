@@ -53,10 +53,10 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
    settings=PaperConfiguration.load(getDataFolder().toPath(),this::getResource);
    PaperConfigValidator.validate(settings.getValues(true));
    Map<String,String> builtIn;
-   try(var reader=new java.io.InputStreamReader(Objects.requireNonNull(getResource("languages/ru.json")),java.nio.charset.StandardCharsets.UTF_8)){
+   try(var reader=new java.io.InputStreamReader(Objects.requireNonNull(getResource("languages/en.json")),java.nio.charset.StandardCharsets.UTF_8)){
     builtIn=new com.google.gson.Gson().fromJson(reader,new com.google.gson.reflect.TypeToken<Map<String,String>>(){}.getType());
    }
-   messages=new AuthMessages(LanguageCatalog.load(getDataFolder().toPath().resolve("languages"),settings.getString("language.default","ru"),settings.getBoolean("language.auto-detect",true),builtIn));
+   messages=new AuthMessages(LanguageCatalog.load(getDataFolder().toPath().resolve("languages"),settings.getString("language.default","en"),settings.getBoolean("language.auto-detect",true),builtIn));
    for(String key:List.of("unavailable","timeout","blocked","usage","CAPTCHA","CAPTCHA_INVALID","captcha-pack-fallback","captcha-pack-required","LOGIN","REGISTER","AUTHENTICATED","TOTP_REQUIRED","TOTP_INVALID","RECOVERY_INVALID","totp-format","INVALID_CREDENTIALS","ACCOUNT_EXISTS","RATE_LIMITED","BUSY","password-too-short","password-too-long","password-mismatch","captcha-format","INVALID_REQUEST","EXPIRED","UNAVAILABLE","not-ready","secure-command-only","chat-login-prompt","chat-register-prompt","chat-confirm-prompt","chat-totp-prompt","dialog-required","admin-console-only","admin-use-velocity","admin-help","admin-invalid-username","admin-list-header","admin-list-row","admin-list-more","admin-info","admin-status-ok","admin-status-not-found","admin-status-invalid-request","admin-status-busy","admin-status-unavailable"))messages.component("messages."+key);
    if(settings.getBoolean("console.banner",true))for(String line:StartupBanner.lines(getPluginMeta().getVersion(),"Paper"))getLogger().info(line);
    getLogger().info(messages.plain("console.starting"));
@@ -69,7 +69,7 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
     getServer().getPluginManager().registerEvents(this,this);
     maintenanceTask=Bukkit.getScheduler().scheduleSyncRepeatingTask(this,this::publishWhitelist,1,40);
    }
-   if(networkNode){getLogger().info("[+] ready    » NETWORK_NODE  node:"+settings.getString("node-id")+"  whitelist-sync:on");return;}
+   if(networkNode){getLogger().info(ru.moonlightproject.dev.selene.core.ConsoleStyle.line("[+] ready    » NETWORK_NODE  node:"+settings.getString("node-id")+"  whitelist-sync:on"));return;}
    limbo=new LimboManager(this,Objects.requireNonNull(settings.getConfigurationSection("limbo"),"Missing configuration section: limbo"));limbo.load();
    presentation=new PlayerPresentation(this,messages,settings);
    String stage=settings.getString("stage","");if(!Set.of("AFTER_JOIN","BEFORE_JOIN").contains(stage))throw new IllegalArgumentException("stage must be AFTER_JOIN or BEFORE_JOIN");
@@ -82,17 +82,17 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
    // ExoLeaf core protects the inventory natively; PacketEvents is then not needed.
    InventoryProtection exoProtection=packetEventsEnabled?exoLeafProtection():null;
    if(packetEventsEnabled&&exoProtection==null&&!getServer().getPluginManager().isPluginEnabled("packetevents"))throw new IllegalStateException("PacketEvents is enabled but unavailable");
-   if(standalone&&!packetEventsEnabled)getLogger().warning("[!] shield   » PacketEvents offline in STANDALONE; inventory may leak pre-auth");
+   if(standalone&&!packetEventsEnabled)getLogger().warning(ru.moonlightproject.dev.selene.core.ConsoleStyle.line("[!] shield   » PacketEvents offline in STANDALONE; inventory may leak pre-auth"));
    String pack=settings.getString("resource-pack-provider","NONE");
    if(!Set.of("NONE","Oraxen","ItemsAdder").contains(pack) || (!pack.equals("NONE")&&!getServer().getPluginManager().isPluginEnabled(pack)))throw new IllegalArgumentException("Configured external pack manager '"+pack+"' is unavailable or failed to enable");
    if(captchaView.equals("DIALOG_FONT")&&pack.equals("NONE")&&!settings.getBoolean("captcha.resource-pack.enabled",false))throw new IllegalArgumentException("captcha-view DIALOG_FONT requires captcha.resource-pack.enabled or resource-pack-provider ItemsAdder/Oraxen");
    if(settings.getBoolean("captcha.resource-pack.enabled",false))resourcePackDelivery=ResourcePackDelivery.parse(
     settings.getString("captcha.resource-pack.id",""),settings.getString("captcha.resource-pack.url",""),settings.getString("captcha.resource-pack.sha1",""),settings.getString("captcha.resource-pack.prompt",""));
-   if(exoProtection!=null){inventoryProtection=exoProtection;getServer().getPluginManager().registerEvents((org.bukkit.event.Listener)exoProtection,this);getLogger().info("[+] shield   » inventory masked pre-auth • ExoLeaf core");}
+   if(exoProtection!=null){inventoryProtection=exoProtection;getServer().getPluginManager().registerEvents((org.bukkit.event.Listener)exoProtection,this);getLogger().info(ru.moonlightproject.dev.selene.core.ConsoleStyle.line("[+] shield   » inventory masked pre-auth • ExoLeaf core"));}
    else if(packetEventsEnabled){inventoryProtection=new PacketEventsInventoryProtection();getLogger().info(messages.plain("console.packets-active",AuthMessages.literal("version",com.github.retrooper.packetevents.PacketEvents.getAPI().getVersion().toString())));}
    else getLogger().info(messages.plain("console.packets-inactive",AuthMessages.literal("role",role),AuthMessages.literal("mode",packetMode)));
    String file=standalone?"standalone.properties":"relay.properties";
-   if(!new File(getDataFolder(),file).exists()){saveResource(file,false);getLogger().warning("[!] config   » created "+file+"; TLS identity & trust required");}
+   if(!new File(getDataFolder(),file).exists()){saveResource(file,false);getLogger().warning(ru.moonlightproject.dev.selene.core.ConsoleStyle.line("[!] config   » created "+file+"; TLS identity & trust required"));}
    Properties props=roleProperties(file,standalone);
    var tls=(!standalone || required(props,"endpoint").startsWith("tls:"))?tlsContext(file,props):null;
    if(standalone){BackendGateway backend=BackendGateway.connect(required(props,"endpoint"),tls,strictBoolean(props,"allow-loopback-plaintext"),Duration.ofSeconds(5));gateway=backend;adminGateway=backend;}else gateway=new RelayGateway(tls,required(props,"host"),positiveInt(props,"port"),Duration.ofSeconds(5),32);
@@ -112,7 +112,7 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
    getLogger().info(messages.plain("console.ready",AuthMessages.literal("role",role),AuthMessages.literal("stage",stage),AuthMessages.literal("world",settings.getString("limbo.world")),AuthMessages.literal("dialogs",Boolean.toString(dialogCapable))));
    // Reload is unsupported: no existing connection may inherit authentication.
    for(Player p:Bukkit.getOnlinePlayers())p.kick(msg(p,"unavailable"));
-  }catch(Exception | LinkageError e){String reason=e.getMessage()==null?e.getClass().getSimpleName():e.getMessage();getLogger().severe("[x] init     » startup aborted: "+reason+"  server:shutdown");getLogger().log(Level.FINE,"Selene startup failure details",e);Bukkit.shutdown();}
+  }catch(Exception | LinkageError e){String reason=e.getMessage()==null?e.getClass().getSimpleName():e.getMessage();getLogger().severe(ru.moonlightproject.dev.selene.core.ConsoleStyle.line("[x] init     » startup aborted: "+reason+"  server:shutdown"));getLogger().log(Level.FINE,"Selene startup failure details",e);Bukkit.shutdown();}
  }
  /**
   * Re-reads every Selene file by restarting the plugin. The new configuration is checked first,
@@ -132,11 +132,11 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
   }catch(Exception error){
    String reason=error.getMessage()==null?error.getClass().getSimpleName():error.getMessage();
    sender.sendMessage(messages.component("messages.reload-invalid",AuthMessages.literal("reason",reason)));
-   getLogger().warning("[-] reload   » rejected: "+reason);
+   getLogger().warning(ru.moonlightproject.dev.selene.core.ConsoleStyle.line("[-] reload   » rejected: "+reason));
    return;
   }
   sender.sendMessage(messages.component("messages.reload-started"));
-  getLogger().info("[*] reload   » requested by "+sender.getName());
+  getLogger().info(ru.moonlightproject.dev.selene.core.ConsoleStyle.line("[*] reload   » requested by "+sender.getName()));
   Bukkit.getScheduler().runTask(this,()->{var plugins=getServer().getPluginManager();plugins.disablePlugin(this);plugins.enablePlugin(this);});
  }
  private javax.net.ssl.SSLContext tlsContext(String file,Properties props)throws Exception{
@@ -176,7 +176,7 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
    Class.forName("ru.moonlightproject.dev.exoleaf.api.ExoLeaf",false,getClass().getClassLoader());
    return (InventoryProtection)Class.forName("ru.moonlightproject.dev.selene.paper.ExoLeafInventoryProtection").getDeclaredConstructor().newInstance();
   }catch(ClassNotFoundException|LinkageError absent){return null;}
-  catch(ReflectiveOperationException error){getLogger().warning("[x] shield   » ExoLeaf protection startup failed: "+error);return null;}
+  catch(ReflectiveOperationException error){getLogger().warning(ru.moonlightproject.dev.selene.core.ConsoleStyle.line("[x] shield   » ExoLeaf protection startup failed: "+error));return null;}
  }
 
  @EventHandler(priority=EventPriority.LOWEST) public void join(PlayerJoinEvent e){
@@ -197,7 +197,7 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
   if(!current(s)||resourcePackDelivery==null)return;
   var prompt=net.kyori.adventure.text.minimessage.MiniMessage.miniMessage().deserialize(resourcePackDelivery.prompt());
   s.player.setResourcePack(resourcePackDelivery.id(),resourcePackDelivery.url(),resourcePackDelivery.sha1(),prompt,true);
-  getLogger().info("[*] pack     » resource pack sent to "+s.player.getName());
+  getLogger().info(ru.moonlightproject.dev.selene.core.ConsoleStyle.line("[*] pack     » resource pack sent to "+s.player.getName()));
  }
  private boolean sendMaintenance(byte[] message){
   Player carrier=getServer().getOnlinePlayers().stream().findFirst().orElse(null);if(carrier==null)return false;
@@ -258,7 +258,7 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
   if(interactiveCaptcha==null||s.interactiveNonce.isBlank()){s.player.kick(msg(s.player,"unavailable"));return;}
   try{interactiveCaptcha.start(s.player,s.auth.view().sessionId(),s.interactiveNonce,success->Bukkit.getScheduler().runTask(this,()->{
    if(!current(s))return;interactiveCaptcha.stop(s.player,false);if(!flow.submitInteractive(s.auth)){s.player.sendMessage(msg(s.player,"not-ready"));return;}request(s,success?"interactive_complete":"interactive_mistake","","");
-  }));}catch(RuntimeException error){getLogger().warning("[x] captcha  » interactive challenge failed for "+s.player.getName()+": "+error.getMessage());s.player.kick(msg(s.player,"unavailable"));}
+  }));}catch(RuntimeException error){getLogger().warning(ru.moonlightproject.dev.selene.core.ConsoleStyle.line("[x] captcha  » interactive challenge failed for "+s.player.getName()+": "+error.getMessage()));s.player.kick(msg(s.player,"unavailable"));}
  }
  private void startManagement(Session s){
   if(!current(s)||s.management==null||s.managementStarted)return;
@@ -317,7 +317,7 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
     if(!AuthInputValidation.totp(code).valid()){s.player.sendMessage(msg(s.player,"totp-format"));presentTotpSetup(s,reply,0);return;}
     requestManagement(s,"totp_setup_confirm",code,"");
    }));
-  }catch(RuntimeException|LinkageError failure){getLogger().warning("[x] 2fa      » dialog failed for "+s.player.getName()+": "+failure.getClass().getSimpleName());s.player.sendMessage(msg(s.player,"UNAVAILABLE"));}
+  }catch(RuntimeException|LinkageError failure){getLogger().warning(ru.moonlightproject.dev.selene.core.ConsoleStyle.line("[x] 2fa      » dialog failed for "+s.player.getName()+": "+failure.getClass().getSimpleName()));s.player.sendMessage(msg(s.player,"UNAVAILABLE"));}
  }
  private void completeManagement(Session s){
   if(!current(s)||s.management==null)return;
@@ -338,7 +338,7 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
   CaptchaPresentationPolicy.Action action=policy.action(s.packLoaded,dialogCapable);
   if(action==CaptchaPresentationPolicy.Action.SHOW_DIALOG){
    try{AuthDialogs.captcha(s.player,messages.forLocale(s.player.getLocale()),settings,s.captchaGlyphs,answer->Bukkit.getScheduler().runTask(this,()->submitCaptcha(s,answer)));getLogger().fine("CAPTCHA dialog shown to "+s.player.getName());return;}
-   catch(LinkageError|RuntimeException error){getLogger().warning("[x] captcha  » dialog failed for "+s.player.getName()+": "+error.getClass().getSimpleName());action=settings.getBoolean("captcha.fallback-to-map",true)?CaptchaPresentationPolicy.Action.SHOW_MAP:CaptchaPresentationPolicy.Action.REJECT;}
+   catch(LinkageError|RuntimeException error){getLogger().warning(ru.moonlightproject.dev.selene.core.ConsoleStyle.line("[x] captcha  » dialog failed for "+s.player.getName()+": "+error.getClass().getSimpleName()));action=settings.getBoolean("captcha.fallback-to-map",true)?CaptchaPresentationPolicy.Action.SHOW_MAP:CaptchaPresentationPolicy.Action.REJECT;}
   }
   int max=Math.max(1,settings.getInt("captcha.pack-load-timeout-seconds",15))*2;
   if(action==CaptchaPresentationPolicy.Action.WAIT&&attempt<max){Bukkit.getScheduler().runTaskLater(this,()->presentCaptcha(s,generation,attempt+1,policy),10);return;}
@@ -346,7 +346,7 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
   if(action==CaptchaPresentationPolicy.Action.SHOW_MAP){s.player.sendMessage(msg(s.player,"captcha-pack-fallback"));showCaptchaMap(s);}
   else s.player.kick(msg(s.player,"captcha-pack-required"));
  }
- private void showCaptchaMap(Session s){try{showMap(s,s.captchaImage);s.player.sendMessage(msg(s.player,"CAPTCHA"));}catch(Exception ex){getLogger().warning("[x] captcha  » map render failed for "+s.player.getName()+": "+ex.getMessage());s.player.kick(msg(s.player,"unavailable"));}}
+ private void showCaptchaMap(Session s){try{showMap(s,s.captchaImage);s.player.sendMessage(msg(s.player,"CAPTCHA"));}catch(Exception ex){getLogger().warning(ru.moonlightproject.dev.selene.core.ConsoleStyle.line("[x] captcha  » map render failed for "+s.player.getName()+": "+ex.getMessage()));s.player.kick(msg(s.player,"unavailable"));}}
  private void submitCaptcha(Session s,String answer){
   AuthInputValidation.ValidationResult validation=AuthInputValidation.captcha(answer);if(!validation.valid()){s.player.sendMessage(msg(s.player,validation.messageKey()));showCaptcha(s);return;}
   if(flow.submitCaptcha(s.auth,answer))request(s,"answer","",answer);else s.player.sendMessage(msg(s.player,"not-ready"));
@@ -386,7 +386,7 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
   request(s,name,args[0],"");return true;
  }
  @EventHandler public void quit(PlayerQuitEvent e){e.quitMessage(null);secureInput.clear(e.getPlayer().getUniqueId());resourcePackStatuses.remove(e.getPlayer().getUniqueId());Session s=sessions.get(e.getPlayer().getUniqueId());if(s!=null&&s.player==e.getPlayer()&&sessions.remove(e.getPlayer().getUniqueId(),s)){if(interactiveCaptcha!=null)interactiveCaptcha.forget(s.player);if(packetEventsEnabled)inventoryProtection.close(s.inventoryConnection);presentation.restore(s.player,s.snapshot);restoreVisibility(s);releaseMap(s);gateway.call(dto(s,"close","",""));flow.close(s.auth);}}
- @EventHandler public void resourcePackStatus(PlayerResourcePackStatusEvent e){getLogger().info("[*] pack     » player:"+e.getPlayer().getName()+"  status:"+e.getStatus());Boolean loaded=switch(e.getStatus()){case SUCCESSFULLY_LOADED -> true;case DECLINED,FAILED_DOWNLOAD,INVALID_URL,FAILED_RELOAD,DISCARDED -> false;default -> null;};if(loaded==null)return;resourcePackStatuses.put(e.getPlayer().getUniqueId(),loaded);Session s=sessions.get(e.getPlayer().getUniqueId());if(s==null)return;s.packLoaded=loaded;if(loaded&&settings.getString("captcha.resource-pack-loading","MANUAL").equalsIgnoreCase("SERVER")&&s.auth.view().stage()==AuthStage.WAITING_FOR_CAPTCHA)showCaptcha(s);}
+ @EventHandler public void resourcePackStatus(PlayerResourcePackStatusEvent e){getLogger().info(ru.moonlightproject.dev.selene.core.ConsoleStyle.line("[*] pack     » player:"+e.getPlayer().getName()+"  status:"+e.getStatus()));Boolean loaded=switch(e.getStatus()){case SUCCESSFULLY_LOADED -> true;case DECLINED,FAILED_DOWNLOAD,INVALID_URL,FAILED_RELOAD,DISCARDED -> false;default -> null;};if(loaded==null)return;resourcePackStatuses.put(e.getPlayer().getUniqueId(),loaded);Session s=sessions.get(e.getPlayer().getUniqueId());if(s==null)return;s.packLoaded=loaded;if(loaded&&settings.getString("captcha.resource-pack-loading","MANUAL").equalsIgnoreCase("SERVER")&&s.auth.view().stage()==AuthStage.WAITING_FOR_CAPTCHA)showCaptcha(s);}
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void move(PlayerMoveEvent e){Location from=e.getFrom(),to=e.getTo();if(to!=null&&interactiveCaptcha!=null&&interactiveCaptcha.active(e.getPlayer())){interactiveCaptcha.move(e.getPlayer(),to);return;}if(locked(e.getPlayer())&&to!=null&&Countdown.movementChanged(from.getX(),from.getY(),from.getZ(),from.getYaw(),from.getPitch(),to.getX(),to.getY(),to.getZ(),to.getYaw(),to.getPitch()))e.setTo(from);}
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void teleport(PlayerTeleportEvent e){if(locked(e.getPlayer())&&e.getCause()!=PlayerTeleportEvent.TeleportCause.PLUGIN)e.setCancelled(true);}
  @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void command(PlayerCommandPreprocessEvent e){if(interactiveCaptcha!=null&&interactiveCaptcha.active(e.getPlayer())){e.setCancelled(true);e.getPlayer().sendMessage(msg(e.getPlayer(),"blocked"));return;}if(locked(e.getPlayer())){String c=e.getMessage().split(" ",2)[0].substring(1);if(!PacketPolicy.allowCommand(c)){e.setCancelled(true);e.getPlayer().sendMessage(msg(e.getPlayer(),"blocked"));}}}

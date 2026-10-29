@@ -130,7 +130,7 @@ struct Console {
 impl Default for Console {
     fn default() -> Self {
         Self {
-            language: "ru".into(),
+            language: "en".into(),
             banner: true,
         }
     }
@@ -144,38 +144,12 @@ impl Console {
         Ok(())
     }
     fn info(&self, ru: &str, en: &str) {
-        println!(
-            "[Selene/INFO] {}",
-            if self.language == "ru" { ru } else { en }
-        );
+        let text = if self.language == "ru" { ru } else { en };
+        println!("[Selene/INFO] {}", style::line(text, style::enabled()));
     }
     fn startup(&self) {
         if self.banner {
-            let purpose = if self.language == "ru" {
-                "авторизация и контроль доступа"
-            } else {
-                "authentication & access control"
-            };
-            for (index, line) in [
-                "",
-                "       ▄▄██▀▀    Selene backend",
-                "    ▄████▀       Rust • MoonLightBridge",
-                "   ████▀",
-                "  ████",
-                "  ████",
-                "   ████▄",
-                "    ▀████▄       ~VicTim~",
-                "       ▀▀██▄▄    dev.moonlightproject.ru",
-                "",
-            ]
-            .into_iter()
-            .enumerate()
-            {
-                let line = if index == 4 {
-                    format!("{line}          {purpose}")
-                } else {
-                    line.to_owned()
-                };
+            for line in style::banner(env!("CARGO_PKG_VERSION"), style::enabled()) {
                 println!("[Selene/INFO] {line}");
             }
         }
@@ -191,6 +165,135 @@ impl Console {
         );
     }
 }
+
+/// Console styling: `[*] tag » text` lines and the crescent banner. ANSI colours only when
+/// stdout is a terminal, so journald and log files stay plain.
+mod style {
+    use std::io::IsTerminal;
+
+    const RESET: &str = "\x1b[0m";
+    const BOLD: &str = "\x1b[1m";
+    const DIM: &str = "\x1b[2m";
+    const RED: &str = "\x1b[91m";
+    const DARK_RED: &str = "\x1b[31m";
+    const GREEN: &str = "\x1b[92m";
+    const YELLOW: &str = "\x1b[93m";
+    const CYAN: &str = "\x1b[96m";
+    const MAGENTA: &str = "\x1b[95m";
+    const GRAY: &str = "\x1b[90m";
+    const WHITE: &str = "\x1b[97m";
+    const MOON: &str = "\x1b[38;5;229m";
+
+    /// Crescent tilted counter-clockwise: the lower horn reaches further right.
+    const CRESCENT: [&str; 9] = [
+        "     ▄          ",
+        "   ▄█▀          ",
+        "  ███           ",
+        " ████           ",
+        " ████           ",
+        " ████▄          ",
+        "  █████▄        ",
+        "   ▀█████▄▄     ",
+        "     ▀▀██████▀▀ ",
+    ];
+
+    pub fn enabled() -> bool {
+        std::io::stdout().is_terminal()
+    }
+
+    fn paint(on: bool, color: &str, text: &str) -> String {
+        if on {
+            format!("{color}{text}{RESET}")
+        } else {
+            text.to_string()
+        }
+    }
+
+    pub fn banner(version: &str, on: bool) -> Vec<String> {
+        let text = [
+            paint(on, DIM, "·      ✦"),
+            format!(
+                "{}  {}",
+                paint(on, &format!("{BOLD}{WHITE}"), "S E L E N E"),
+                paint(on, GRAY, version)
+            ),
+            paint(on, GRAY, "─────────────────────────────"),
+            format!(
+                "{}{}{}",
+                paint(on, CYAN, "Rust backend"),
+                paint(on, GRAY, " • "),
+                paint(on, CYAN, "MoonLightBridge")
+            ),
+            paint(on, WHITE, "authentication & access control"),
+            String::new(),
+            paint(on, MAGENTA, "~VicTim~"),
+            paint(on, GRAY, "dev.moonlightproject.ru"),
+            paint(on, DIM, "        ✦    ·"),
+        ];
+        let mut out = vec![String::new()];
+        for (moon, text) in CRESCENT.iter().zip(text.iter()) {
+            out.push(
+                format!("{}  {}", paint(on, MOON, moon), text)
+                    .trim_end()
+                    .to_string(),
+            );
+        }
+        out.push(String::new());
+        out
+    }
+
+    /// Colours `[m] tag » body`; other text is returned unchanged.
+    pub fn line(text: &str, on: bool) -> String {
+        if !on {
+            return text.to_string();
+        }
+        let bytes = text.as_bytes();
+        if bytes.len() < 5 || bytes[0] != b'[' || bytes[2] != b']' || bytes[3] != b' ' {
+            return text.to_string();
+        }
+        let Some(arrow) = text.find('»') else {
+            return text.to_string();
+        };
+        let marker = bytes[1] as char;
+        let color = match marker {
+            '+' => GREEN,
+            '!' => YELLOW,
+            'x' => RED,
+            '-' => DARK_RED,
+            '~' => MAGENTA,
+            _ => CYAN,
+        };
+        let head = &text[4..arrow];
+        let tag = head.trim_end();
+        let pad = &head[tag.len()..];
+        let body = text[arrow + '»'.len_utf8()..].trim_start();
+        let mut styled = String::new();
+        for (i, word) in body.split(' ').enumerate() {
+            if i > 0 {
+                styled.push(' ');
+            }
+            match word.split_once(':') {
+                Some((key, value))
+                    if !key.is_empty()
+                        && !value.starts_with("//")
+                        && key.chars().all(|c| {
+                            c.is_ascii_lowercase() || c.is_ascii_digit() || "/_-".contains(c)
+                        }) =>
+                {
+                    styled.push_str(&format!("{GRAY}{key}:{WHITE}{value}{RESET}"));
+                }
+                _ if word == "→" => styled.push_str(&format!("{GRAY}→{RESET}")),
+                _ => styled.push_str(word),
+            }
+        }
+        if marker == 'x' {
+            styled = format!("{RED}{styled}{RESET}");
+        }
+        format!(
+            "{BOLD}{color}[{marker}]{RESET} {BOLD}{WHITE}{tag}{RESET}{pad}{GRAY}» {RESET}{styled}"
+        )
+    }
+}
 fn default_admin_concurrency() -> usize {
     4
 }
@@ -199,9 +302,16 @@ fn default_admin_page_size() -> u32 {
 }
 #[tokio::main]
 async fn main() {
+    use std::io::IsTerminal;
     if let Err(error) = run().await {
         // Only the contextual message: database drivers may put credentials in their error chain.
-        eprintln!("[Selene/ERROR] [x] init     » startup aborted: {error}");
+        eprintln!(
+            "[Selene/ERROR] {}",
+            style::line(
+                &format!("[x] init     » startup aborted: {error}"),
+                std::io::stderr().is_terminal()
+            )
+        );
         std::process::exit(1);
     }
 }
@@ -247,7 +357,7 @@ async fn run() -> anyhow::Result<()> {
     );
     config.console.info(
         "[*] db       » подключение и проверка схемы…",
-        "[*] db       » connecting & verifying schema…",
+        "[*] db       » connecting, verifying schema…",
     );
     let totp_key = config.totp.resolve_key(|name| std::env::var(name).ok())?;
     let service = Arc::new(
@@ -428,8 +538,8 @@ async fn run() -> anyhow::Result<()> {
         .build();
     let server = if config.development_plaintext {
         config.console.info(
-            "Локальный режим разработки • шифрование отключено.",
-            "Local development mode • encryption disabled.",
+            "[!] dev      » локальный режим разработки, шифрование ОТКЛЮЧЕНО",
+            "[!] dev      » local development mode, encryption DISABLED",
         );
         Server::bind_tcp(&config.listen, router)
             .await
@@ -534,7 +644,7 @@ mod console_tests {
     #[test]
     fn console_defaults_and_language_validation() {
         let console: Console = toml::from_str("").unwrap();
-        assert_eq!(console.language, "ru");
+        assert_eq!(console.language, "en");
         assert!(console.banner);
         assert!(console.validate().is_ok());
         let invalid: Console = toml::from_str("language='xx'").unwrap();

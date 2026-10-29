@@ -23,7 +23,7 @@ record VelocityConfiguration(VelocityConfig config, LanguageCatalog languages, M
             if(!Files.exists(directory.resolve("velocity.properties.legacy.bak")))
                 Files.copy(legacy,directory.resolve("velocity.properties.legacy.bak"));
         }
-        Map<String,String> builtIn=json(resource("languages/ru.json"));
+        Map<String,String> builtIn=json(resource("languages/en.json"));
         for(String locale:List.of("ru","en")) {
             Path target=directory.resolve("languages/"+locale+".json");
             if(!Files.exists(target)) {

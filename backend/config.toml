@@ -23,7 +23,7 @@ admin_page_size = 50
 
 [console]
 # Язык сообщений запуска: ru или en.
-language = "ru"
+language = "en"
 # Показывать компактный логотип при запуске.
 banner = true
 

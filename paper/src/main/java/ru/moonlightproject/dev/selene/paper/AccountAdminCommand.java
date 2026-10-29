@@ -26,7 +26,7 @@ final class AccountAdminCommand implements CommandExecutor {
   AdminCommandParser.Parsed parsed=AdminCommandParser.parse(args);if(!parsed.valid()){sender.sendMessage(messages.component("messages."+(parsed.error().equals("username")?"admin-invalid-username":"admin-help")));return true;}
   long start=System.nanoTime();gateway.admin(parsed.request()).whenComplete((reply,error)->Bukkit.getScheduler().runTask(plugin,()->{
    AdminReply safe=error==null&&reply!=null?reply:new AdminReply("UNAVAILABLE",java.util.List.of(),null,0,false);render(sender,parsed.request(),safe);
-   plugin.getLogger().info("[*] admin    » "+AdminCommandParser.audit(parsed.request().op(),parsed.request().username(),safe.status(),java.time.Duration.ofNanos(System.nanoTime()-start).toMillis()));
+   plugin.getLogger().info(ru.moonlightproject.dev.selene.core.ConsoleStyle.line("[*] admin    » "+AdminCommandParser.audit(parsed.request().op(),parsed.request().username(),safe.status(),java.time.Duration.ofNanos(System.nanoTime()-start).toMillis())));
   }));return true;
  }
  private void render(CommandSender sender,AdminRequest request,AdminReply reply){

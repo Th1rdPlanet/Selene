@@ -71,7 +71,7 @@ final class SeleneCommand implements SimpleCommand {
   long start=System.nanoTime();String actor=source instanceof Player player?player.getUsername():"console";
   gateway.admin(parsed.request()).whenComplete((reply,error)->{
    AdminReply safe=error==null&&reply!=null?reply:new AdminReply("UNAVAILABLE",List.of(),null,0,false);render(source,parsed.request(),safe);
-   logger.info("[*] admin    » actor:{}  {}",actor.replaceAll("[^A-Za-z0-9_]","?"),AdminCommandParser.audit(parsed.request().op(),parsed.request().username(),safe.status(),java.time.Duration.ofNanos(System.nanoTime()-start).toMillis()));
+   logger.info(ru.moonlightproject.dev.selene.core.ConsoleStyle.line("[*] admin    » actor:{}  {}"),actor.replaceAll("[^A-Za-z0-9_]","?"),AdminCommandParser.audit(parsed.request().op(),parsed.request().username(),safe.status(),java.time.Duration.ofNanos(System.nanoTime()-start).toMillis()));
   });
  }
 
