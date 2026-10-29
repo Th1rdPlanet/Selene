@@ -80,7 +80,7 @@ final class SeleneCommand implements SimpleCommand {
   if(!reply.status().equals("OK")){source.sendMessage(m.component(AdminCommandParser.messageKey(reply.status()),VelocityMessages.account(request.username())));return;}
   if(request.op().equals("list")){source.sendMessage(m.component("admin-list-header",VelocityMessages.literal("page",Integer.toString(reply.page()))));for(AdminReply.Account account:reply.accounts())source.sendMessage(account(m,"admin-list-row",account));if(reply.hasMore())source.sendMessage(m.component("admin-list-more",VelocityMessages.literal("page",Integer.toString(reply.page()+1))));}
   else if(request.op().equals("info")&&reply.account()!=null)source.sendMessage(account(m,"admin-info",reply.account()));
-  else source.sendMessage(m.component("admin-status-ok",VelocityMessages.account(request.username()),VelocityMessages.literal("operation",request.op())));
+  else source.sendMessage(m.component("admin-status-ok",VelocityMessages.account(request.username()),m.template("op-"+request.op()).isEmpty()?VelocityMessages.literal("operation",request.op()):m.part("operation","op-"+request.op())));
  }
 
  /** Lists only the commands this source may run. */
@@ -120,5 +120,5 @@ final class SeleneCommand implements SimpleCommand {
   return base;
  }
  private static boolean validName(String name){return name.matches("[A-Za-z0-9_]{3,16}");}
- static Component account(VelocityMessages messages,String key,AdminReply.Account account){return messages.component(key,VelocityMessages.account(account.name()),VelocityMessages.literal("premium",Boolean.toString(account.premium())),VelocityMessages.literal("trusted-ip",account.trustedIp().isEmpty()?"—":account.trustedIp()),VelocityMessages.literal("trusted-until",Long.toString(account.trustedUntil())),VelocityMessages.literal("password-reset",Boolean.toString(account.passwordReset())),VelocityMessages.literal("totp-enabled",Boolean.toString(account.totpEnabled())));}
+ static Component account(VelocityMessages messages,String key,AdminReply.Account account){return messages.component(key,VelocityMessages.account(account.name()),messages.flag("premium",account.premium()),messages.text("trusted-ip",account.trustedIp()),messages.until("trusted-until",account.trustedUntil()),messages.flag("password-reset",account.passwordReset()),messages.flag("totp-enabled",account.totpEnabled()));}
 }

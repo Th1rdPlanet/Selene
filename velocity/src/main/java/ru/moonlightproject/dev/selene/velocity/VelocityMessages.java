@@ -41,6 +41,21 @@ final class VelocityMessages {
  }
 
  String plain(String key,TagResolver... resolvers){return ru.moonlightproject.dev.selene.core.ConsoleStyle.line(net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText().serialize(component(key,resolvers)));}
+ /** Inserts another template, e.g. a localized word, as the value of a placeholder. */
+ TagResolver part(String key,String template,TagResolver... resolvers){return Placeholder.component(key,component(template,resolvers));}
+ TagResolver flag(String key,boolean value){return part(key,value?"value-yes":"value-no");}
+ TagResolver text(String key,String value){return value==null||value.isBlank()?part(key,"value-none"):literal(key,value);}
+ /** Time left until an epoch second, or "none" when it is unset or already past. */
+ TagResolver until(String key,long epochSecond){
+  long left=epochSecond-java.time.Instant.now().getEpochSecond();
+  return left<=0?part(key,"value-none"):part(key,"value-left",literal("time",duration(left)));
+ }
+ String duration(long seconds){
+  long days=seconds/86400,hours=seconds%86400/3600,minutes=Math.max(1,seconds%3600/60);
+  if(days>0)return days+template("unit-days")+(hours>0?" "+hours+template("unit-hours"):"");
+  if(hours>0)return hours+template("unit-hours")+" "+seconds%3600/60+template("unit-minutes");
+  return minutes+template("unit-minutes");
+ }
  static TagResolver literal(String key,String value){return Placeholder.component(key,Component.text(value));}
  static TagResolver player(String value){return literal("player",value);}
  static TagResolver account(String value){return literal("account",value);}

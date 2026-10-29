@@ -766,6 +766,13 @@ public final class SeleneVelocityPlugin implements SeleneApi {
         return state == null ? Component.text("Authentication unavailable") : state.messages().component(key);
     }
 
+    /** Messages in the language of the player who ran the command, or the default for the console. */
+    private static VelocityMessages commandMessages(RuntimeState state, com.velocitypowered.api.command.CommandSource source) {
+        if (!(source instanceof Player player)) return state.messages();
+        java.util.Locale locale = player.getPlayerSettings().getLocale();
+        return state.messages().forLocale(locale == null ? null : locale.toLanguageTag());
+    }
+
     private Component text(Player player, String key) {
         RuntimeState state=runtime;
         if(state==null)return Component.text("Authentication unavailable");
@@ -862,19 +869,20 @@ public final class SeleneVelocityPlugin implements SeleneApi {
     private void protectionCommand(com.velocitypowered.api.command.SimpleCommand.Invocation invocation) {
         RuntimeState state = runtime;
         if (state == null) {
-            invocation.source().sendMessage(Component.text("Selene ещё не готова."));
+            invocation.source().sendMessage(Component.text("Selene is not ready yet."));
             return;
         }
         synchronized (state.protection()) {
             currentLevel(state, System.currentTimeMillis());
             String[] args = invocation.arguments();
             Component reply;
+            VelocityMessages m = commandMessages(state, invocation.source());
             if (args.length == 2 && args[1].equalsIgnoreCase("confirm")) {
-                reply = state.messages().component(state.protection().confirm()?"protection-confirmed":"protection-no-request");
+                reply = m.component(state.protection().confirm()?"protection-confirmed":"protection-no-request");
             } else if (args.length == 2 && args[1].equalsIgnoreCase("status")) {
-                reply = state.messages().component("protection-status",VelocityMessages.literal("current",state.protection().level().name()),
-                    VelocityMessages.literal("pending",Boolean.toString(state.protection().pending())));
-            } else reply=state.messages().component("protection-help");
+                reply = m.component("protection-status",VelocityMessages.literal("current",state.protection().level().name()),
+                    m.flag("pending",state.protection().pending()));
+            } else reply=m.component("protection-help");
             invocation.source().sendMessage(reply);
         }
     }
@@ -883,7 +891,7 @@ public final class SeleneVelocityPlugin implements SeleneApi {
     private final class CommandOperations implements SeleneCommand.Operations {
         @Override public void status(com.velocitypowered.api.command.CommandSource source) {
             RuntimeState state = runtime;
-            if (state == null) { source.sendMessage(Component.text("Selene ещё не готова.")); return; }
+            if (state == null) { source.sendMessage(Component.text("Selene is not ready yet.")); return; }
             AttackLevel level = currentLevel(state, System.currentTimeMillis());
             String authServer = state.config().authServer();
             long onAuth = proxy.getAllPlayers().stream().filter(p -> p.getCurrentServer()
@@ -896,39 +904,42 @@ public final class SeleneVelocityPlugin implements SeleneApi {
                 .whenComplete((reply, error) -> {
                     boolean up = error == null && reply != null && reply.status().equals("OK");
                     long millis = java.time.Duration.ofNanos(System.nanoTime() - started).toMillis();
-                    source.sendMessage(state.messages().component("command-status",
+                    VelocityMessages m = commandMessages(state, source);
+                    source.sendMessage(m.component("command-status",
                         VelocityMessages.literal("version", "0.1.0-dev"),
                         VelocityMessages.literal("level", level.name()),
-                        VelocityMessages.literal("pending-confirm", Boolean.toString(state.protection().pending())),
-                        VelocityMessages.literal("backend", up ? "OK • " + millis + " ms" : "недоступен / unavailable"),
+                        m.flag("pending-confirm", state.protection().pending()),
+                        up ? m.part("backend", "value-backend-up", VelocityMessages.literal("ms", Long.toString(millis)))
+                            : m.part("backend", "value-backend-down"),
                         VelocityMessages.literal("online", Integer.toString(proxy.getPlayerCount())),
                         VelocityMessages.literal("on-auth", Long.toString(onAuth)),
                         VelocityMessages.literal("authenticated", Integer.toString(loggedIn)),
                         VelocityMessages.literal("pending", Integer.toString(pending)),
-                        VelocityMessages.literal("otel", Boolean.toString(tracing != null))));
+                        m.flag("otel", tracing != null)));
                 });
         }
         @Override public void session(com.velocitypowered.api.command.CommandSource source, String username) {
             RuntimeState state = runtime;
             Optional<Player> player = proxy.getPlayer(username);
-            if (state == null || player.isEmpty()) { source.sendMessage(state == null ? Component.text("Selene ещё не готова.")
+            if (state == null || player.isEmpty()) { source.sendMessage(state == null ? Component.text("Selene is not ready yet.")
                 : state.messages().component("command-player-offline", VelocityMessages.player(username))); return; }
             Optional<UUID> connection = state.identities().get(player.get());
             Optional<ConnectionSessions.Session> session = connection.flatMap(state.sessions()::get);
-            source.sendMessage(state.messages().component("command-session",
+            VelocityMessages m = commandMessages(state, source);
+            source.sendMessage(m.component("command-session",
                 VelocityMessages.player(player.get().getUsername()),
-                VelocityMessages.literal("authenticated", Boolean.toString(isAuthenticated(player.get()))),
+                m.flag("authenticated", isAuthenticated(player.get())),
                 VelocityMessages.literal("server", player.get().getCurrentServer().map(s -> s.getServerInfo().getName()).orElse("—")),
                 VelocityMessages.literal("ip", player.get().getRemoteAddress().getAddress().getHostAddress()),
-                VelocityMessages.literal("premium", session.map(s -> Boolean.toString(s.premium())).orElse("—")),
-                VelocityMessages.literal("captcha", session.map(s -> Boolean.toString(s.captchaRequired())).orElse("—")),
-                VelocityMessages.literal("management", Boolean.toString(connection.flatMap(state.twoFactorRoutes()::get).isPresent())),
+                session.map(s -> m.flag("premium", s.premium())).orElse(m.part("premium", "value-none")),
+                session.map(s -> m.flag("captcha", s.captchaRequired())).orElse(m.part("captcha", "value-none")),
+                m.flag("management", connection.flatMap(state.twoFactorRoutes()::get).isPresent()),
                 VelocityMessages.literal("ping", Long.toString(player.get().getPing()))));
         }
         @Override public void logout(com.velocitypowered.api.command.CommandSource source, String username) {
             RuntimeState state = runtime;
             Optional<Player> player = proxy.getPlayer(username);
-            if (state == null || player.isEmpty()) { source.sendMessage(state == null ? Component.text("Selene ещё не готова.")
+            if (state == null || player.isEmpty()) { source.sendMessage(state == null ? Component.text("Selene is not ready yet.")
                 : state.messages().component("command-player-offline", VelocityMessages.player(username))); return; }
             Player target = player.get();
             // Forget the login before disconnecting, so the disconnect handler does not grant IP trust.
