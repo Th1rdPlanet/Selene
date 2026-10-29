@@ -80,14 +80,17 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
    String packetMode=settings.getString("packet-events-mode","AUTO").toUpperCase(Locale.ROOT);
    if(!Set.of("AUTO","ENABLED","DISABLED").contains(packetMode))throw new IllegalArgumentException("packet-events-mode must be AUTO, ENABLED or DISABLED");
    packetEventsEnabled=packetMode.equals("ENABLED")||(packetMode.equals("AUTO")&&standalone);
-   if(packetEventsEnabled&&!getServer().getPluginManager().isPluginEnabled("packetevents"))throw new IllegalStateException("PacketEvents is enabled but unavailable");
+   // ExoLeaf core protects the inventory natively; PacketEvents is then not needed.
+   InventoryProtection exoProtection=packetEventsEnabled?exoLeafProtection():null;
+   if(packetEventsEnabled&&exoProtection==null&&!getServer().getPluginManager().isPluginEnabled("packetevents"))throw new IllegalStateException("PacketEvents is enabled but unavailable");
    if(standalone&&!packetEventsEnabled)getLogger().warning("PacketEvents is disabled in STANDALONE mode; the client can receive the real inventory before authentication");
    String pack=settings.getString("resource-pack-provider","NONE");
    if(!Set.of("NONE","Oraxen","ItemsAdder").contains(pack) || (!pack.equals("NONE")&&!getServer().getPluginManager().isPluginEnabled(pack)))throw new IllegalArgumentException("Configured external pack manager '"+pack+"' is unavailable or failed to enable");
    if(captchaView.equals("DIALOG_FONT")&&pack.equals("NONE")&&!settings.getBoolean("captcha.resource-pack.enabled",false))throw new IllegalArgumentException("captcha-view DIALOG_FONT requires captcha.resource-pack.enabled or resource-pack-provider ItemsAdder/Oraxen");
    if(settings.getBoolean("captcha.resource-pack.enabled",false))resourcePackDelivery=ResourcePackDelivery.parse(
     settings.getString("captcha.resource-pack.id",""),settings.getString("captcha.resource-pack.url",""),settings.getString("captcha.resource-pack.sha1",""),settings.getString("captcha.resource-pack.prompt",""));
-   if(packetEventsEnabled){inventoryProtection=new PacketEventsInventoryProtection();getLogger().info(messages.plain("console.packets-active",AuthMessages.literal("version",com.github.retrooper.packetevents.PacketEvents.getAPI().getVersion().toString())));}
+   if(exoProtection!=null){inventoryProtection=exoProtection;getServer().getPluginManager().registerEvents((org.bukkit.event.Listener)exoProtection,this);getLogger().info("Inventory protection: ExoLeaf core");}
+   else if(packetEventsEnabled){inventoryProtection=new PacketEventsInventoryProtection();getLogger().info(messages.plain("console.packets-active",AuthMessages.literal("version",com.github.retrooper.packetevents.PacketEvents.getAPI().getVersion().toString())));}
    else getLogger().info(messages.plain("console.packets-inactive",AuthMessages.literal("role",role),AuthMessages.literal("mode",packetMode)));
    String file=standalone?"standalone.properties":"relay.properties";
    if(!new File(getDataFolder(),file).exists()){saveResource(file,false);getLogger().warning("Created "+file+"; configure its TLS identity and trust before Selene can accept players");}
@@ -168,6 +171,15 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
  }
  private net.kyori.adventure.text.Component msg(Player player,String key){return messages.forLocale(player.getLocale()).component("messages."+key);}
  private boolean locked(Player p){Session s=sessions.get(p.getUniqueId());return s==null||LimboLockPolicy.locked(s.auth.view().stage(),s.management!=null);}
+ /** ExoLeaf-backed protection when the server runs ExoLeaf, otherwise null. */
+ private InventoryProtection exoLeafProtection(){
+  try{
+   Class.forName("ru.moonlightproject.dev.exoleaf.api.ExoLeaf",false,getClass().getClassLoader());
+   return (InventoryProtection)Class.forName("ru.moonlightproject.dev.selene.paper.ExoLeafInventoryProtection").getDeclaredConstructor().newInstance();
+  }catch(ClassNotFoundException|LinkageError absent){return null;}
+  catch(ReflectiveOperationException error){getLogger().warning("ExoLeaf protection failed to start: "+error);return null;}
+ }
+
  @EventHandler(priority=EventPriority.LOWEST) public void join(PlayerJoinEvent e){
   if(maintenanceNode!=null)Bukkit.getScheduler().runTask(this,this::publishWhitelist);
   if(networkNode)return;

@@ -7,6 +7,8 @@ dependencies {
     testImplementation("net.kyori:adventure-text-minimessage:4.24.0")
     compileOnly("com.github.retrooper:packetevents-spigot:2.9.5")
     compileOnly("io.papermc.paper:paper-api:1.21.8-R0.1-SNAPSHOT")
+    // ExoLeaf API (provided by the ExoLeaf server at runtime), vendored until published.
+    compileOnly(files("libs/exoleaf-api-1.0.0.jar"))
     testImplementation("io.papermc.paper:paper-api:1.21.8-R0.1-SNAPSHOT")
 }
 tasks.jar { archiveClassifier.set("plain") }
