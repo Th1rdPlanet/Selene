@@ -13,14 +13,19 @@ final class PresentationSnapshot {
  final float experience;
  final int level,totalExperience;
  final Map<PotionEffectType,PotionEffect> effects;
+ // Flight is allowed while Selene holds the player in the air (limbo), so vanilla does not kick
+ // them for floating; the previous state comes back on restore.
+ final boolean allowFlight,flying;
+ boolean ownsFlight;
  Scoreboard ownedScoreboard;
  float ownedExperience;
  int ownedLevel;
  boolean ownsExperience;
  final Map<PotionEffectType,PotionEffect> ownedEffects=new java.util.HashMap<>();
 
- PresentationSnapshot(Location location,Scoreboard scoreboard,float experience,int level,int totalExperience,Map<PotionEffectType,PotionEffect> effects){
+ PresentationSnapshot(Location location,Scoreboard scoreboard,float experience,int level,int totalExperience,Map<PotionEffectType,PotionEffect> effects,boolean allowFlight,boolean flying){
   this.location=location;this.scoreboard=scoreboard;this.experience=experience;this.level=level;this.totalExperience=totalExperience;this.effects=Map.copyOf(effects);
+  this.allowFlight=allowFlight;this.flying=flying;
  }
  Location location(){return location;}
 

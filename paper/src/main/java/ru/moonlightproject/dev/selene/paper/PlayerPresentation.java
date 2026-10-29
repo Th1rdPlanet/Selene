@@ -20,7 +20,8 @@ final class PlayerPresentation {
 
  PresentationSnapshot begin(Player player){
   Map<PotionEffectType,PotionEffect> effects=new HashMap<>();for(PotionEffect effect:player.getActivePotionEffects())effects.put(effect.getType(),effect);
-  PresentationSnapshot snapshot=new PresentationSnapshot(player.getLocation().clone(),player.getScoreboard(),player.getExp(),player.getLevel(),player.getTotalExperience(),effects);
+  PresentationSnapshot snapshot=new PresentationSnapshot(player.getLocation().clone(),player.getScoreboard(),player.getExp(),player.getLevel(),player.getTotalExperience(),effects,player.getAllowFlight(),player.isFlying());
+  holdFlight(player,snapshot);
   applyEffect(player,snapshot,PotionEffectType.BLINDNESS,"effects.blindness");applyEffect(player,snapshot,PotionEffectType.DARKNESS,"effects.darkness");
   if(config.getBoolean("presentation.scoreboard.enabled",true)){
    Scoreboard board=Bukkit.getScoreboardManager().getNewScoreboard();Objective objective=board.registerNewObjective("selene","dummy",messages.forLocale(player.getLocale()).component("presentation.scoreboard.states.connecting.title"));objective.setDisplaySlot(DisplaySlot.SIDEBAR);
@@ -31,6 +32,7 @@ final class PlayerPresentation {
 
  void render(Player player,PresentationSnapshot snapshot,AuthViewState state,long nowMillis){
   long seconds=Countdown.secondsRemaining(nowMillis,state.deadlineMillis());
+  holdFlight(player,snapshot);
   String screen=PresentationState.key(state);var time=AuthMessages.seconds(seconds);
   if(config.getBoolean("presentation.title.enabled",true))player.showTitle(Title.title(messages.forLocale(player.getLocale()).component("presentation.title.states."+screen+".title",time),messages.forLocale(player.getLocale()).component("presentation.title.states."+screen+".subtitle",time),Title.Times.times(Duration.ofMillis(config.getLong("presentation.title.fade-in-millis",0)),Duration.ofMillis(config.getLong("presentation.title.stay-millis",1200)),Duration.ofMillis(config.getLong("presentation.title.fade-out-millis",200)))));
   if(config.getBoolean("presentation.actionbar.enabled",true))player.sendActionBar(messages.forLocale(player.getLocale()).component("presentation.actionbar.states."+screen,time));
@@ -54,7 +56,14 @@ final class PlayerPresentation {
     player.removePotionEffect(entry.getKey());PotionEffect previous=snapshot.effects.get(entry.getKey());if(previous!=null)player.addPotionEffect(previous);
    }
   }
+  if(snapshot.ownsFlight&&player.getAllowFlight()){player.setFlying(snapshot.allowFlight&&snapshot.flying);player.setAllowFlight(snapshot.allowFlight);}
   player.clearTitle();
+ }
+
+ // Re-applied every render: a game mode change (the interactive CAPTCHA switches to survival)
+ // resets flight, and vanilla kicks a player who floats for 80 ticks without it.
+ private static void holdFlight(Player player,PresentationSnapshot snapshot){
+  snapshot.ownsFlight=true;if(!player.getAllowFlight())player.setAllowFlight(true);
  }
 
  private void applyEffect(Player player,PresentationSnapshot snapshot,PotionEffectType type,String path){
