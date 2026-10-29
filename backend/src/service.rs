@@ -224,7 +224,10 @@ impl Service {
             .values()
             .filter(|s| s.authenticated.is_some())
             .count();
-        let maintenance = sessions.values().filter(|s| s.maintenance_revision > 0).count();
+        let maintenance = sessions
+            .values()
+            .filter(|s| s.maintenance_revision > 0)
+            .count();
         Some((sessions.len() - authenticated, authenticated, maintenance))
     }
     pub async fn handle(&self, mut r: Request) -> Reply {
@@ -496,7 +499,8 @@ impl Service {
             if r.op != "answer" {
                 return Reply::status("INVALID_REQUEST", &id);
             }
-            if (s.maintenance_revision == 0 || s.maintenance_verify_captcha) && r.answer != c.answer {
+            if (s.maintenance_revision == 0 || s.maintenance_verify_captcha) && r.answer != c.answer
+            {
                 s.attempts += 1;
                 return Reply::status(
                     if s.attempts >= self.policy.max_attempts {

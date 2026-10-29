@@ -149,10 +149,16 @@ mod tests {
             let rows: Vec<&str> = challenge.glyphs.split('\n').collect();
             assert_eq!(rows.len(), 10);
             assert!(rows.iter().all(|row| row.chars().count() == 31));
-            assert!(rows.iter().flat_map(|row| row.chars())
-                .all(|glyph| ('\u{e100}'..='\u{e108}').contains(&glyph)));
-            let lit = rows.iter().flat_map(|row| row.chars())
-                .filter(|glyph| *glyph != '\u{e108}').count();
+            assert!(
+                rows.iter()
+                    .flat_map(|row| row.chars())
+                    .all(|glyph| ('\u{e100}'..='\u{e108}').contains(&glyph))
+            );
+            let lit = rows
+                .iter()
+                .flat_map(|row| row.chars())
+                .filter(|glyph| *glyph != '\u{e108}')
+                .count();
             assert!(lit > 50, "digits must be drawn, got {lit} lit pixels");
             assert!(!format!("{challenge:?}").contains(&challenge.answer));
         }
