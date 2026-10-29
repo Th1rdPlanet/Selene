@@ -121,6 +121,8 @@ pub(crate) struct Session {
     identity_verified: bool,
     pending_totp: Option<PendingTotp>,
     pub(crate) authenticated: Option<Instant>,
+    password_flight: u64,
+    password_busy: bool,
 }
 struct PendingTotp {
     secret: zeroize::Zeroizing<Vec<u8>>,
@@ -357,6 +359,8 @@ impl Service {
                     identity_verified: false,
                     pending_totp: None,
                     authenticated: None,
+                    password_flight: 0,
+                    password_busy: false,
                 },
             );
         }
@@ -377,6 +381,9 @@ impl Service {
         };
         if s.name != r.username || s.ip != r.ip || !maintenance_matches(s, &r) {
             return Reply::status("INVALID_REQUEST", &id);
+        }
+        if s.password_busy {
+            return Reply::status("BUSY", &id);
         }
         if s.attempts >= self.policy.max_attempts {
             let mut reply = Reply::status("RATE_LIMITED", &id);
@@ -502,7 +509,23 @@ impl Service {
             }
             s.challenge = None;
         }
-        let account = match self.storage.account(&s.name).await {
+        s.password_flight = s.password_flight.wrapping_add(1);
+        s.password_busy = true;
+        let account_flight = s.password_flight;
+        let account_name = s.name.clone();
+        drop(sessions);
+        let account_result = self.storage.account(&account_name).await;
+        let mut sessions = self.sessions.lock().await;
+        let time = Instant::now();
+        let Some(s) = sessions.get_mut(&id).filter(|session| {
+            session.password_busy
+                && session.password_flight == account_flight
+                && time < session.expires
+        }) else {
+            return Reply::status("EXPIRED", &id);
+        };
+        s.password_busy = false;
+        let account = match account_result {
             Ok(a) => a,
             Err(_) => return Reply::status("UNAVAILABLE", &id),
         };
@@ -571,12 +594,16 @@ impl Service {
         let previous_hash = hash.clone();
         let registering = r.op == "register";
         let password = r.password;
+        s.password_flight = s.password_flight.wrapping_add(1);
+        s.password_busy = true;
+        let password_flight = s.password_flight;
         let lanes = self.policy.password_lanes;
         let stage = if registering {
             "argon2.hash"
         } else {
             "argon2.verify"
         };
+        drop(sessions);
         let result = crate::traces::span(
             stage,
             tokio::task::spawn_blocking(move || {
@@ -606,9 +633,16 @@ impl Service {
             }),
         )
         .await;
-        if Instant::now() >= s.expires {
+        let mut sessions = self.sessions.lock().await;
+        let time = Instant::now();
+        let Some(s) = sessions.get_mut(&id).filter(|session| {
+            session.password_busy
+                && session.password_flight == password_flight
+                && time < session.expires
+        }) else {
             return Reply::status("EXPIRED", &id);
-        }
+        };
+        s.password_busy = false;
         match result {
             Ok(Ok(outcome)) => {
                 match outcome {

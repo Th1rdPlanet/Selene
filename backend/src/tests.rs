@@ -353,6 +353,47 @@ async fn password_completion_after_session_expiry_cannot_register() {
 }
 
 #[tokio::test]
+async fn password_hash_does_not_block_another_session() {
+    let s = service().await;
+    let mut slow = request("begin");
+    assert_eq!(s.handle(slow.clone()).await.status, "REGISTER");
+    slow.op = "register".into();
+    let other = request("begin");
+    let (registered, began) = tokio::join!(s.handle(slow), s.handle(other));
+    assert_eq!(registered.status, "AUTHENTICATED");
+    assert_eq!(began.status, "REGISTER");
+}
+
+#[tokio::test]
+async fn one_password_request_is_allowed_in_flight_per_session() {
+    let s = service().await;
+    let mut first = request("begin");
+    assert_eq!(s.handle(first.clone()).await.status, "REGISTER");
+    first.op = "register".into();
+    let mut second = first.clone();
+    second.password = "another long password".into();
+    let (first_reply, second_reply) = tokio::join!(s.handle(first), s.handle(second));
+    assert_eq!(first_reply.status, "AUTHENTICATED");
+    assert_eq!(second_reply.status, "BUSY");
+}
+
+#[tokio::test]
+async fn closing_session_during_password_hash_prevents_registration() {
+    let s = service().await;
+    let mut register = request("begin");
+    assert_eq!(s.handle(register.clone()).await.status, "REGISTER");
+    register.op = "register".into();
+    let mut close = register.clone();
+    close.op = "close".into();
+    close.password.clear();
+    let (registration, closed) = tokio::join!(s.handle(register.clone()), s.handle(close));
+    assert_eq!(closed.status, "CLOSED");
+    assert_eq!(registration.status, "EXPIRED");
+    register.op = "profile".into();
+    assert_eq!(s.handle(register).await.status, "ACCOUNT_NEW");
+}
+
+#[tokio::test]
 async fn totp_setup_requires_confirmation_and_returns_recovery_once() {
     let s = totp_service().await;
     let mut r = request("begin");
