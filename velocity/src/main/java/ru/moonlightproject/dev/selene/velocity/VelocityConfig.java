@@ -45,6 +45,7 @@ record VelocityConfig(
     long outboundBytesStrong,
     boolean normalCaptcha,
     boolean forkEnabled,
+    boolean forkRequired,
     boolean premiumLookupEnabled,
     Duration premiumLookupTimeout,
     int premiumLookupCacheCapacity,
@@ -145,7 +146,8 @@ record VelocityConfig(
             positiveLong(properties,"outbound-bytes-medium-per-second",2_500_000),
             positiveLong(properties,"outbound-bytes-strong-per-second",5_000_000),
             bool(properties, "normal-captcha"),
-            bool(properties, "fork-enabled"),
+            !required(properties, "fork-enabled").equalsIgnoreCase("false") && forkMode(properties),
+            required(properties, "fork-enabled").equalsIgnoreCase("true"),
             bool(properties, "premium-lookup-enabled"),
             Duration.ofMillis(positive(properties, "premium-lookup-timeout-millis")),
             positive(properties, "premium-lookup-cache-capacity"),
@@ -198,6 +200,15 @@ record VelocityConfig(
         String value = properties.getProperty(key);
         if (value == null || value.isBlank()) throw new IllegalArgumentException("Missing setting: " + key);
         return value.trim();
+    }
+
+    /** fork-enabled: auto (use a compatible core when present), true (require it) or false. */
+    private static boolean forkMode(Properties properties) {
+        String value = required(properties, "fork-enabled");
+        if (!value.equalsIgnoreCase("auto") && !value.equalsIgnoreCase("true") && !value.equalsIgnoreCase("false")) {
+            throw new IllegalArgumentException("Setting must be auto, true or false: fork-enabled");
+        }
+        return true;
     }
 
     private static boolean bool(Properties properties, String key) {

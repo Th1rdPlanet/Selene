@@ -10,8 +10,10 @@ default-server: "lobby"
 # false: всегда отправлять на default-server.
 restore-last-server: true
 # --- Опциональный fork API --------------------------------------------------
-# Включай только если ядро/модуль предоставляет совместимый Selene ForkCapabilities.
-fork-enabled: false
+# auto — использовать совместимое ядро (ThirdVelocity или ForkCapabilities через
+#        ServiceLoader), если оно есть; на обычном Velocity ничего не меняется.
+# true — требовать ядро, без него плагин не запустится. false — не использовать.
+fork-enabled: auto
 # --- Лимиты памяти и входов -------------------------------------------------
 # Максимум одновременно отслеживаемых игровых сессий.
 session-capacity: 4096

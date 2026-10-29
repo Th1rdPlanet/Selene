@@ -17,4 +17,15 @@ public interface ForkCapabilities {
   default ProtectionSignals protectionSignals() {
     return ProtectionSignals.UNAVAILABLE;
   }
+  /**
+   * Result of an authentication step reported by the backend (AUTHENTICATED, CAPTCHA_INVALID,
+   * INVALID_CREDENTIALS, RATE_LIMITED). Lets the core learn trusted addresses and penalize
+   * failures. Must return immediately.
+   */
+  default void onAuthentication(String username, java.net.InetAddress address, String status) {
+  }
+  /** Short provider name for logs. */
+  default String name() {
+    return "none";
+  }
 }

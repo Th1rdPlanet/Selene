@@ -115,8 +115,11 @@ public final class SeleneVelocityPlugin implements SeleneApi {
                 if(files.banner())for(String line:ru.moonlightproject.dev.selene.core.StartupBanner.lines("0.1.0-dev", "Velocity"))logger.info(line);
                 logger.info(messages.plain("console-starting"));
                 ForkCapabilities fork = findForkCapabilities();
-                if (config.forkEnabled() && !fork.supportsEarlyAdmission()) {
+                if (config.forkRequired() && !fork.supportsEarlyAdmission()) {
                     throw new IllegalStateException("fork-enabled requires a compatible Selene fork API provider");
+                }
+                if (config.forkEnabled() && fork.supportsEarlyAdmission()) {
+                    logger.info("Ядро защиты подключено: " + fork.name());
                 }
                 SSLContext tls = TlsContexts.load(
                     config.keyStore(), config.keyStorePasswordEnv(),
@@ -458,8 +461,19 @@ public final class SeleneVelocityPlugin implements SeleneApi {
             if (!state.sessions().observeReply(connection, sessionId, reply)) {
                 return AuthReply.status("EXPIRED", "");
             }
-            if(Set.of("AUTHENTICATED","CAPTCHA_INVALID","INVALID_CREDENTIALS","RATE_LIMITED").contains(reply.status()))
+            if(Set.of("AUTHENTICATED","CAPTCHA_INVALID","INVALID_CREDENTIALS","RATE_LIMITED").contains(reply.status())) {
                 state.attacks().observeAuthentication(!reply.status().equals("AUTHENTICATED"),System.currentTimeMillis());
+                if (state.config().forkEnabled()) {
+                    ConnectionSessions.Session current = state.sessions().get(connection).orElse(null);
+                    if (current != null) {
+                        try {
+                            state.fork().onAuthentication(current.username(), current.address(), reply.status());
+                        } catch (RuntimeException error) {
+                            logger.warn("Fork authentication hook failed: " + error);
+                        }
+                    }
+                }
+            }
             if (reply.status().equals("AUTHENTICATED") && state.twoFactorRoutes().get(connection).isEmpty())
                 acceptAuthentication(player.get(), state.sessions().get(connection).orElseThrow(), reply);
             return reply;
@@ -698,8 +712,21 @@ public final class SeleneVelocityPlugin implements SeleneApi {
     }
 
     private ForkCapabilities findForkCapabilities() {
-        return ServiceLoader.load(ForkCapabilities.class, getClass().getClassLoader())
-            .findFirst().orElseGet(() -> new ForkCapabilities() {});
+        Optional<ForkCapabilities> provided = ServiceLoader.load(ForkCapabilities.class, getClass().getClassLoader())
+            .findFirst();
+        if (provided.isPresent()) return provided.get();
+        // ThirdVelocity exposes its own API; the bridge is loaded reflectively so the plugin keeps
+        // working on a plain Velocity where the API classes do not exist.
+        try {
+            Class.forName("ru.moonlightproject.dev.thirdvelocity.api.ThirdVelocity", false, getClass().getClassLoader());
+            return (ForkCapabilities) Class.forName("ru.moonlightproject.dev.selene.velocity.ThirdVelocityForkCapabilities")
+                .getDeclaredConstructor().newInstance();
+        } catch (ClassNotFoundException | LinkageError absent) {
+            return new ForkCapabilities() {};
+        } catch (ReflectiveOperationException error) {
+            logger.warn("ThirdVelocity bridge failed to start: " + error);
+            return new ForkCapabilities() {};
+        }
     }
 
     private AttackLevel currentLevel(RuntimeState state, long now) {

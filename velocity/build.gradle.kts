@@ -15,6 +15,10 @@ dependencies {
     compileOnly("net.kyori:adventure-text-minimessage:4.24.0")
     testImplementation("net.kyori:adventure-text-minimessage:4.24.0")
     compileOnly("com.velocitypowered:velocity-api:3.4.0-SNAPSHOT")
+    // ThirdVelocity API (provided by the proxy at runtime). Vendored while the repository is
+    // private; switch to com.github.Th1rdPlanet.ThirdVelocity:thirdvelocity-api via JitPack later.
+    compileOnly(files("libs/thirdvelocity-api-1.0.0.jar"))
+    testImplementation(files("libs/thirdvelocity-api-1.0.0.jar"))
     annotationProcessor("com.velocitypowered:velocity-api:3.4.0-SNAPSHOT")
 }
 tasks.jar { archiveClassifier.set("plain") }
