@@ -141,13 +141,12 @@ async fn captcha_cannot_be_bypassed_or_reset_by_begin() {
     let first = s.handle(r.clone()).await;
     assert_eq!(first.status, "CAPTCHA");
     assert!(first.image.starts_with("iVBOR"));
-    let rows: Vec<&str> = first.captcha_glyphs.split('\n').collect();
-    assert_eq!(rows.len(), 10);
-    assert!(rows.iter().all(|row| row.chars().count() == 31));
+    assert_eq!(first.captcha_glyphs.chars().count(), 5);
     assert!(
-        rows.iter()
-            .flat_map(|row| row.chars())
-            .all(|c| ('\u{e100}'..='\u{e108}').contains(&c))
+        first
+            .captcha_glyphs
+            .chars()
+            .all(|c| ('\u{e000}'..='\u{e27f}').contains(&c))
     );
     r.op = "register".into();
     assert_eq!(s.handle(r.clone()).await.status, "INVALID_REQUEST");

@@ -21,21 +21,18 @@ class FontAssetsTest(unittest.TestCase):
         run("generate_captcha_font.py")
         run("generate_qr_font.py")
 
-    def test_captcha_has_deterministic_shade_cells_and_equal_width_blank(self):
+    def test_captcha_has_640_compact_deterministic_glyphs(self):
         font_path = ASSETS / "font/captcha.json"
         texture_path = ASSETS / "textures/font/captcha.png"
         before = hashlib.sha256(texture_path.read_bytes()).digest()
         run("generate_captcha_font.py")
         self.assertEqual(before, hashlib.sha256(texture_path.read_bytes()).digest())
-        providers = json.loads(font_path.read_text())["providers"]
-        provider = providers[0]
-        self.assertEqual([8], list(map(len, provider["chars"])))
-        self.assertEqual(list(range(0xE100, 0xE108)), list(map(ord, provider["chars"][0])))
-        self.assertEqual(9, providers[1]["advances"][chr(0xE108)])
+        provider = json.loads(font_path.read_text())["providers"][0]
+        self.assertEqual([64] * 10, list(map(len, provider["chars"])))
+        self.assertEqual(0xE000, ord(provider["chars"][0][0]))
+        self.assertEqual(0xE27F, ord(provider["chars"][-1][-1]))
         with Image.open(texture_path) as texture:
-            self.assertEqual((64, 8), texture.size)
-            colors = {texture.getpixel((cell * 8, 0)) for cell in range(8)}
-            self.assertEqual(8, len(colors))
+            self.assertEqual((12 * 64, 18 * 10), texture.size)
 
     def test_qr_has_all_exact_unique_tiles_without_clipping(self):
         font_path = ASSETS / "font/qr.json"

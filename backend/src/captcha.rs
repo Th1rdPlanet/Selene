@@ -1,5 +1,5 @@
 use base64::Engine;
-use rand::{Rng, rngs::OsRng};
+use rand::{rngs::OsRng, Rng};
 pub struct Challenge {
     pub(crate) answer: String,
     pub image: String,
@@ -52,7 +52,15 @@ pub fn generate() -> Challenge {
     let answer: String = (0..5)
         .map(|_| char::from(b'0' + rng.gen_range(0..10)))
         .collect();
-    let captcha_glyphs = mosaic(&answer, &glyphs, &mut rng);
+    // Each decimal digit has sixty-four visually different glyphs in the Selene pack.
+    // The codepoints reveal neither the answer in logs nor to ordinary fonts.
+    let captcha_glyphs: String = answer
+        .bytes()
+        .map(|digit| {
+            let variant = rng.gen_range(0..64) as u32;
+            char::from_u32(0xE000 + u32::from(digit - b'0') * 64 + variant).unwrap()
+        })
+        .collect();
     let mut pixels = vec![236u8; 128 * 128 * 3];
     for (i, digit) in answer.bytes().enumerate() {
         let offset = rng.gen_range(-5i32..6);
@@ -95,72 +103,29 @@ pub fn generate() -> Challenge {
     }
 }
 
-/// First of eight pixel glyphs in `selene:captcha`, one per shade.
-pub(crate) const PIXEL_BASE: u32 = 0xE100;
-/// Transparent glyph with the same advance as a pixel.
-pub(crate) const BLANK: char = '\u{E108}';
-pub(crate) const COLUMNS: usize = 31;
-pub(crate) const ROWS: usize = 10;
-
-/// Draws the answer as rows of pixel glyphs. A codepoint names only a shade, never a digit,
-/// so a client has to recognise the picture instead of mapping glyphs back to the answer.
-fn mosaic(answer: &str, glyphs: &[[&str; 7]; 10], rng: &mut OsRng) -> String {
-    let mut grid = [[None::<u32>; COLUMNS]; ROWS];
-    for (i, digit) in answer.bytes().enumerate() {
-        let left = 1 + i * 6;
-        let top = rng.gen_range(1..=2);
-        let shade = rng.gen_range(4..8);
-        for (y, row) in glyphs[(digit - b'0') as usize].iter().enumerate() {
-            for (x, c) in row.bytes().enumerate() {
-                if c == b'1' && !rng.gen_bool(0.04) {
-                    grid[top + y][left + x] = Some(if rng.gen_bool(0.2) {
-                        rng.gen_range(4..8)
-                    } else {
-                        shade
-                    });
-                }
-            }
-        }
-    }
-    for cell in grid.iter_mut().flatten() {
-        if cell.is_none() && rng.gen_bool(0.09) {
-            *cell = Some(rng.gen_range(0..8));
-        }
-    }
-    grid.iter()
-        .map(|row| {
-            row.iter()
-                .map(|cell| cell.map_or(BLANK, |shade| char::from_u32(PIXEL_BASE + shade).unwrap()))
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashSet;
 
     #[test]
-    fn glyphs_encode_a_shade_mosaic_not_digit_bands() {
-        for _ in 0..32 {
+    fn glyphs_use_five_digits_and_sixty_four_variant_bands() {
+        let mut variants = HashSet::new();
+        for _ in 0..128 {
             let challenge = generate();
             assert_eq!(challenge.answer.len(), 5);
-            let rows: Vec<&str> = challenge.glyphs.split('\n').collect();
-            assert_eq!(rows.len(), 10);
-            assert!(rows.iter().all(|row| row.chars().count() == 31));
-            assert!(
-                rows.iter()
-                    .flat_map(|row| row.chars())
-                    .all(|glyph| ('\u{e100}'..='\u{e108}').contains(&glyph))
-            );
-            let lit = rows
-                .iter()
-                .flat_map(|row| row.chars())
-                .filter(|glyph| *glyph != '\u{e108}')
-                .count();
-            assert!(lit > 50, "digits must be drawn, got {lit} lit pixels");
+            assert_eq!(challenge.glyphs.chars().count(), 5);
+            for (digit, glyph) in challenge.answer.bytes().zip(challenge.glyphs.chars()) {
+                let offset = glyph as u32 - 0xE000;
+                assert_eq!(offset / 64, u32::from(digit - b'0'));
+                assert!(offset % 64 < 64);
+                variants.insert(offset % 64);
+            }
             assert!(!format!("{challenge:?}").contains(&challenge.answer));
         }
+        assert!(
+            variants.len() > 32,
+            "variant selection lacks expected entropy"
+        );
     }
 }
