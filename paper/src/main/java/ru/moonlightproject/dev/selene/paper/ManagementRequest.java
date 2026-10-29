@@ -21,8 +21,8 @@ record ManagementRequest(Action action) {
     String initialOperation() {
         return switch (action) {
             case ENABLE -> "totp_setup_begin";
-            case STATUS -> "totp_status";
-            case DISABLE, RECOVERY -> "";
+            // Disable and recovery ask for a code, so first make sure 2FA is enabled at all.
+            case STATUS, DISABLE, RECOVERY -> "totp_status";
         };
     }
 }

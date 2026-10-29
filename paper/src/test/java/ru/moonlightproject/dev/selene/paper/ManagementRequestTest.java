@@ -20,4 +20,14 @@ class ManagementRequestTest {
         payload[16] = 127;
         assertTrue(ManagementRequest.decode(payload, token.toString()).isEmpty());
     }
+
+    @Test
+    void codeActionsCheckTheStatusFirst() {
+        UUID token = UUID.randomUUID();
+        for (int ordinal = 1; ordinal <= 3; ordinal++) {
+            byte[] payload = ByteBuffer.allocate(17).putLong(token.getMostSignificantBits())
+                .putLong(token.getLeastSignificantBits()).put((byte) ordinal).array();
+            assertEquals("totp_status", ManagementRequest.decode(payload, token.toString()).orElseThrow().initialOperation());
+        }
+    }
 }

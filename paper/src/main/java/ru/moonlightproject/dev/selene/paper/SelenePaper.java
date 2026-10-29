@@ -296,8 +296,14 @@ public final class SelenePaper extends JavaPlugin implements Listener, PluginMes
    case "TOTP_SETUP" -> presentTotpSetup(s,reply,0);
    case "TOTP_RECOVERY" -> AuthDialogs.recovery(s.player,localized,settings,
     TotpPresentation.recovery(reply.recoveryCodes()),()->completeManagement(s));
-   case "TOTP_STATUS" -> AuthDialogs.managementResult(s.player,localized,settings,
-    reply.totpEnabled()?"dialogs.management-result.enabled":"dialogs.management-result.disabled",()->completeManagement(s));
+   case "TOTP_STATUS" -> {
+    ManagementRequest.Action action=s.management.action();
+    if(action==ManagementRequest.Action.DISABLE||action==ManagementRequest.Action.RECOVERY){
+     if(reply.totpEnabled())openManagementVerification(s);
+     else AuthDialogs.managementResult(s.player,localized,settings,"messages.TOTP_NOT_ENABLED",()->completeManagement(s));
+    }else AuthDialogs.managementResult(s.player,localized,settings,
+     reply.totpEnabled()?"dialogs.management-result.enabled":"dialogs.management-result.disabled",()->completeManagement(s));
+   }
    case "TOTP_DISABLED","TOTP_NOT_ENABLED","TOTP_ALREADY_ENABLED" -> AuthDialogs.managementResult(s.player,localized,settings,
     "messages."+reply.status(),()->completeManagement(s));
    case "TOTP_INVALID","RECOVERY_INVALID" -> {s.player.sendMessage(msg(s.player,reply.status()));
